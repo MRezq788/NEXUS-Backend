@@ -16,7 +16,6 @@ export function extractUserEmail(req: Request, res: Response, next: NextFunction
   const email = req.headers['x-user-email'] as string;
   if (email) {
     req.userEmail = email;
-    console.log('Request from user:', email);
   }
   next();
 }
@@ -32,7 +31,7 @@ export class ProductController {
   }
 
   // GET /api/products?page=1&limit=5&search=&status=
-  getProducts = async (req: Request, res: Response) => {  // Arrow function
+  getProducts = async (req: Request, res: Response) => {  
     try {
       const userEmail = this.getUserEmail(req);
       const { page, limit } = getPaginationParams(req.query);
@@ -58,7 +57,7 @@ export class ProductController {
   };
 
   // POST /api/products - Create new product
-  createProduct = async (req: Request, res: Response) => {  // Arrow function
+  createProduct = async (req: Request, res: Response) => {  
     try {
       const userEmail = this.getUserEmail(req);
       const { name, quantity, unit, price, description, category } = req.body;
@@ -85,7 +84,7 @@ export class ProductController {
   };
 
   // PUT /api/products/:id - Update product
-  updateProduct = async (req: Request, res: Response) => {  // Arrow function
+  updateProduct = async (req: Request, res: Response) => {  
     try {
       const userEmail = this.getUserEmail(req);
       const id = req.params.id as string;
@@ -113,7 +112,7 @@ export class ProductController {
   };
 
   // DELETE /api/products/:id - Delete product
-  deleteProduct = async (req: Request, res: Response) => {  // Arrow function
+  deleteProduct = async (req: Request, res: Response) => {  
     try {
       const userEmail = this.getUserEmail(req);
       const id = req.params.id as string;
@@ -133,7 +132,7 @@ export class ProductController {
   };
 
   // DELETE /api/products/batch - Batch delete
-  deleteBatch = async (req: Request, res: Response) => {  // Arrow function
+  deleteBatch = async (req: Request, res: Response) => {  
     try {
       const userEmail = this.getUserEmail(req);
       const { ids } = req.body;
@@ -153,7 +152,7 @@ export class ProductController {
   };
 
   // GET /api/products/stats - Get statistics
-  getStats = async (req: Request, res: Response) => {  // Arrow function
+  getStats = async (req: Request, res: Response) => {
     try {
       const userEmail = this.getUserEmail(req);
       const stats = await productService.getStatistics(userEmail);

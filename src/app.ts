@@ -24,7 +24,7 @@ import reportRoutes from './modules/reports/report.routes';
 // Use routes
 app.use('/api/users', userRoutes);
 app.use('/api/warehouses', warehouseRoutes);
-app.use('/api/products', productRoutes); // This is the main route for your frontend
+app.use('/api/products', productRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/business-inventory', businessInventoryRoutes);
 app.use('/api/orders', orderRoutes);
