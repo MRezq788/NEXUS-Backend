@@ -240,6 +240,26 @@ export class OrderController {
       return errorResponse(res, message, 500);
     }
   };
+
+  // POST /api/orders/:id/cancel - Cancel processing order and restock
+  cancelOrder = async (req: Request, res: Response) => {
+    try {
+      const userEmail = this.getUserEmail(req);
+      const id = req.params.id as string;
+
+      const result = await orderService.cancelOrder(userEmail, id);
+      
+      if (!result.success) {
+        return successResponse(res, result, 'Order cannot be cancelled', 200);
+      }
+
+      return successResponse(res, result, 'Order cancelled and stock restored successfully');
+    } catch (error) {
+      console.error('Cancel order error:', error);
+      const message = error instanceof Error ? error.message : 'Failed to cancel order';
+      return errorResponse(res, message, 500);
+    }
+  };
 }
 
 export const orderController = new OrderController();

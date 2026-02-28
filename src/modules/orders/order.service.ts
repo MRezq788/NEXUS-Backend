@@ -125,6 +125,42 @@ export class OrderService {
       });
     }
   }
+
+async cancelOrder(userEmail: string, id: string): Promise<{ success: boolean; message?: string }> {
+  // Get the order
+  const order = await orderRepository.findById(userEmail, id);
+  if (!order) {
+    throw new Error('Order not found');
+  }
+
+  if (order.status !== 'processing') {
+    throw new Error('Only processing orders can be cancelled');
+  }
+
+  // Restock products (reverse the stock deduction)
+  await this.restockProducts(userEmail, order.products);
+
+  // Update order status to Cancelled
+  await orderRepository.updateStatus(userEmail, id, 'cancelled');
+
+  return { success: true };
+}
+
+// Helper method to restock products when cancelling
+private async restockProducts(
+  userEmail: string,
+  orderProducts: { productId: string; quantity: number }[]
+): Promise<void> {
+    for (const item of orderProducts) {
+      const product = await productRepository.findById(userEmail, item.productId);
+      if (!product) continue;
+
+      const newQuantity = product.quantity + item.quantity;
+      await productRepository.update(userEmail, item.productId, {
+        quantity: newQuantity,
+      });
+    }
+  }
 }
 
 export const orderService = new OrderService();
