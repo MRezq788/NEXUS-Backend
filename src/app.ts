@@ -12,7 +12,7 @@ app.use(extractUserEmail); // extracts email from all requests and adds it to re
 // Import routes
 import userRoutes from './modules/users/user.routes';
 import warehouseRoutes from './modules/warehouses/warehouse.routes';
-import productRoutes from './modules/warehouseProducts/product.routes';
+import productRoutes from './modules/warehouseProducts/warehouse.product.routes';
 import inventoryRoutes from './modules/warehouseInventory/inventory.routes';
 import businessInventoryRoutes from './modules/businessInventory/businessInventory.routes';
 import orderRoutes from './modules/warehouseOrders/warehouse.order.routes';
