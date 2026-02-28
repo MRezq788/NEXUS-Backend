@@ -1,6 +1,6 @@
 import express, { Application } from 'express';
 import cors from 'cors';
-import { extractUserEmail } from './modules/products/product.controller'; // Import middleware
+import { extractUserEmail } from './modules/products/product.controller';
 
 const app: Application = express();
 
@@ -21,6 +21,7 @@ import dashboardRoutes from './modules/dashboard/dashboard.routes';
 import uploadRoutes from './modules/uploads/upload.routes';
 import reportRoutes from './modules/reports/report.routes';
 
+
 // Use routes
 app.use('/api/users', userRoutes);
 app.use('/api/warehouses', warehouseRoutes);
@@ -32,6 +33,7 @@ app.use('/api/pos', posRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/orders', orderRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

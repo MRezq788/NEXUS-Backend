@@ -11,6 +11,7 @@ router.delete('/batch', productController.deleteBatch);
 // Then parameterized routes
 router.get('/stats', productController.getStats);
 router.get('/', productController.getProducts);
+router.get('/:id', productController.getProductById);
 router.put('/:id', productController.updateProduct);
 router.delete('/:id', productController.deleteProduct);
 

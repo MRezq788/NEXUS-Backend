@@ -163,6 +163,26 @@ export class ProductController {
       return errorResponse(res, message, 500);
     }
   };
+
+// GET /api/products/:id - Get single product
+getProductById = async (req: Request, res: Response) => {
+  try {
+    const userEmail = this.getUserEmail(req);
+    const id = req.params.id as string;
+
+    const product = await productService.getProductById(userEmail, id);
+    
+    if (!product) {
+      return errorResponse(res, 'Product not found', 404);
+    }
+
+    return successResponse(res, product, 'Product retrieved successfully');
+  } catch (error) {
+    console.error('Get product error:', error);
+    const message = error instanceof Error ? error.message : 'Failed to retrieve product';
+    return errorResponse(res, message, 500);
+  }
+};
 }
 
 export const productController = new ProductController();
