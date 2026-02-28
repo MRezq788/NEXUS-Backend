@@ -1,14 +1,21 @@
 import * as repository from './businessInventory.repository';
 
 interface FetchParams {
+  email: string,
   limit?: number;
   startAfter?: string;
   search?: string;
   inStock?: boolean;
 }
 
+interface CountParams {
+  email: string,
+  inStock?: boolean;
+}
+
 export const fetchBusinessInventory = async (params: FetchParams) => {
   const {
+    email,
     limit = 10,
     startAfter,
     search,
@@ -23,6 +30,7 @@ export const fetchBusinessInventory = async (params: FetchParams) => {
   const repoLimit = limit + 1;
 
   const objects = await repository.getInventory({
+    email,
     limit: repoLimit,
     startAfter,
     search,
@@ -48,14 +56,10 @@ export const fetchBusinessInventory = async (params: FetchParams) => {
   };
 };
 
-interface CountParams {
-  inStock?: boolean;
-}
-
 export const fetchProductsCount = async (params: CountParams) => {
-  const { inStock } = params;
+  const { email, inStock } = params;
 
-  const count = await repository.getProductsCount({ inStock });
+  const count = await repository.getProductsCount({ email, inStock });
 
   return count;
 };

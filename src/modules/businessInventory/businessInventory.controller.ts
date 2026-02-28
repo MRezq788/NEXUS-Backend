@@ -4,6 +4,11 @@ import { success, error } from '../../core/utils/response';
 
 export const getBusinessInventory = async (req: Request, res: Response) => {
   try {
+    const email = req.headers["x-user-email"] as string | undefined; 
+    if (!email) { 
+        return error(res, "Missing X-User-Email header"); 
+    }
+
     const limitParam = req.query.limit;
     const startAfterParam = req.query.startAfter;
     const searchParam = req.query.search;
@@ -38,6 +43,7 @@ export const getBusinessInventory = async (req: Request, res: Response) => {
     }
 
     const result = await service.fetchBusinessInventory({
+      email,
       limit,
       startAfter,
       search,
@@ -54,6 +60,11 @@ export const getBusinessInventory = async (req: Request, res: Response) => {
 
 export const getProductsCount = async (req: Request, res: Response) => {
   try {
+    const email = req.headers["x-user-email"] as string | undefined; 
+    if (!email) { 
+        return error(res, "Missing X-User-Email header"); 
+    }
+
     const inStockParam = req.query.inStock;
 
     let inStock: boolean | undefined;
@@ -65,7 +76,7 @@ export const getProductsCount = async (req: Request, res: Response) => {
       inStock = inStockParam === 'true';
     }
 
-    const count = await service.fetchProductsCount({ inStock });
+    const count = await service.fetchProductsCount({ email, inStock });
 
     return success(res, { count });
 

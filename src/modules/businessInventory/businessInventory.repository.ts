@@ -16,6 +16,7 @@ const COLLECTION_NAME = 'users';
 const SUBCOLLECTION_NAME = 'products';
 
 interface RepoParams {
+  email: string,
   limit: number;
   startAfter?: string;
   search?: string;
@@ -23,11 +24,13 @@ interface RepoParams {
 }
 
 interface RepoCountParams {
+  email: string,
   inStock?: boolean;
 }
 
 
 export const getInventory = async ({
+  email,
   limit,
   startAfter,
   search,
@@ -37,7 +40,7 @@ export const getInventory = async ({
     const constraints: QueryConstraint[] = [];
 
     // needs firebase handling
-    
+
     // if (typeof inStock === 'boolean') {
     //   const operator = inStock ? "!=" : "==";
     //   constraints.push(where('quantity', operator, 0));
@@ -57,7 +60,7 @@ export const getInventory = async ({
 
     constraints.push(limitFn(limit));
 
-    const q = query(collection(db, COLLECTION_NAME, "warehouse1@nexus.com",SUBCOLLECTION_NAME), ...constraints);
+    const q = query(collection(db, COLLECTION_NAME, email, SUBCOLLECTION_NAME), ...constraints);
 
     const snapshot = await getDocs(q);
 
@@ -75,6 +78,7 @@ export const getInventory = async ({
 };
 
 export const getProductsCount = async ({
+  email,
   inStock,
 }: RepoCountParams): Promise<number> => {
   try {
@@ -85,7 +89,7 @@ export const getProductsCount = async ({
       constraints.push(where('quantity', operator, 0));
     }
 
-    const q = query(collection(db, COLLECTION_NAME, "warehouse1@nexus.com",SUBCOLLECTION_NAME), ...constraints);
+    const q = query(collection(db, COLLECTION_NAME, email, SUBCOLLECTION_NAME), ...constraints);
 
     const snapshot = await getCountFromServer(q);
 
