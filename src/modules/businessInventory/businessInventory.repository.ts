@@ -1,0 +1,98 @@
+import {
+  collection,
+  query,
+  where,
+  orderBy,
+  limit as limitFn,
+  startAfter as startAfterFn,
+  getDocs,
+  getCountFromServer,
+  QueryConstraint,
+} from 'firebase/firestore';
+
+import { db } from '../../core/config/firebase';
+
+const COLLECTION_NAME = 'users';
+const SUBCOLLECTION_NAME = 'products';
+
+interface RepoParams {
+  limit: number;
+  startAfter?: string;
+  search?: string;
+  inStock?: boolean;
+}
+
+interface RepoCountParams {
+  inStock?: boolean;
+}
+
+
+export const getInventory = async ({
+  limit,
+  startAfter,
+  search,
+  inStock,
+}: RepoParams) => {
+  try {
+    const constraints: QueryConstraint[] = [];
+
+    // needs firebase handling
+    
+    // if (typeof inStock === 'boolean') {
+    //   const operator = inStock ? "!=" : "==";
+    //   constraints.push(where('quantity', operator, 0));
+    // }
+
+    // if (search) {
+    //   const end = search + '\uf8ff';
+    //   constraints.push(where('name', '>=', search));
+    //   constraints.push(where('name', '<=', end));
+    // }
+
+    constraints.push(orderBy('createdAt', 'desc'));
+
+    if (startAfter) {
+      constraints.push(startAfterFn(startAfter));
+    }
+
+    constraints.push(limitFn(limit));
+
+    const q = query(collection(db, COLLECTION_NAME, "warehouse1@nexus.com",SUBCOLLECTION_NAME), ...constraints);
+
+    const snapshot = await getDocs(q);
+
+    const results = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as any[];
+
+    return results;
+
+  } catch (err) {
+    console.error('Firestore query failed:', err);
+    throw new Error('Failed to query Firestore');
+  }
+};
+
+export const getProductsCount = async ({
+  inStock,
+}: RepoCountParams): Promise<number> => {
+  try {
+    const constraints: QueryConstraint[] = [];
+
+    if (typeof inStock === 'boolean') {
+      const operator = inStock ? "!=" : "==";
+      constraints.push(where('quantity', operator, 0));
+    }
+
+    const q = query(collection(db, COLLECTION_NAME, "warehouse1@nexus.com",SUBCOLLECTION_NAME), ...constraints);
+
+    const snapshot = await getCountFromServer(q);
+
+    return snapshot.data().count;
+
+  } catch (err) {
+    console.error('Firestore count query failed:', err);
+    throw new Error('Failed to count products');
+  }
+};
