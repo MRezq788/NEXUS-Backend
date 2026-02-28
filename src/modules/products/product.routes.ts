@@ -6,6 +6,7 @@ const router = Router();
 // IMPORTANT: Specific routes MUST come before parameterized routes
 // POST and batch routes first
 router.post('/', productController.createProduct);
+router.post('/batch-upload', productController.batchCreateProducts);
 router.delete('/batch', productController.deleteBatch);
 
 // Then parameterized routes

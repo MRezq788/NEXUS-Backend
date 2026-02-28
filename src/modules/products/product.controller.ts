@@ -183,6 +183,26 @@ getProductById = async (req: Request, res: Response) => {
     return errorResponse(res, message, 500);
   }
 };
+
+// POST /api/products/batch-upload - Batch create products from CSV
+batchCreateProducts = async (req: Request, res: Response) => {  
+  try {
+    const userEmail = this.getUserEmail(req);
+    const { products } = req.body;
+    
+    if (!Array.isArray(products) || products.length === 0) {
+      return errorResponse(res, 'No valid products provided', 400);
+    }
+
+    const result = await productService.createProductsBatch(userEmail, products);
+    
+    return successResponse(res, result, `Batch upload completed: ${result.created} created, ${result.failed} failed`);
+  } catch (error) {
+    console.error('Batch create error:', error);
+    const message = error instanceof Error ? error.message : 'Failed to process batch upload';
+    return errorResponse(res, message, 500);
+  }
+};
 }
 
 export const productController = new ProductController();
