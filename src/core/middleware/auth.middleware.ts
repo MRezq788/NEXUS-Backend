@@ -14,6 +14,7 @@ export const verifyToken = async (
   res: Response,
   next: NextFunction,
 ) => {
+  console.log("Auth middleware hit:", req.method, req.originalUrl);
   const authHeader = req.headers.authorization;
 
   if (!authHeader?.startsWith("Bearer ")) {

@@ -9,30 +9,44 @@ const getUserData = async (userId: String) => {
 };
 
 const getUserSoldAmount = async (userId: String) => {
-  const ordersRef = db
-    .collection("users")
-    .doc(userId)
-    .collection("orders")
-    .where("type", "==", "sold");
+  try {
+    const ordersRef = db
+      .collection("users")
+      .doc(userId)
+      .collection("orders")
+      .where("type", "==", "sold");
 
-  const snapshot = await ordersRef.aggregate({
-    totalAmount: db.constructor.AggregateField.sum("total"),
-  });
-
-  return snapshot.data().totalAmount;
+    const snapshot = await ordersRef.get();
+    let total = 0;
+    snapshot.forEach((doc: any) => {
+      const data = doc.data();
+      total += data.total || 0;
+    });
+    return total;
+  } catch (error) {
+    console.error("Error in getUserSoldAmount:", error);
+    return 0;
+  }
 };
 const getUserBoughtAmount = async (userId: String) => {
-  const ordersRef = db
-    .collection("users")
-    .doc(userId)
-    .collection("orders")
-    .where("type", "==", "bought");
+  try {
+    const ordersRef = db
+      .collection("users")
+      .doc(userId)
+      .collection("orders")
+      .where("type", "==", "bought");
 
-  const snapshot = await ordersRef.aggregate({
-    totalAmount: db.constructor.AggregateField.sum("total"),
-  });
-
-  return snapshot.data().totalAmount;
+    const snapshot = await ordersRef.get();
+    let total = 0;
+    snapshot.forEach((doc: any) => {
+      const data = doc.data();
+      total += data.total || 0;
+    });
+    return total;
+  } catch (error) {
+    console.error("Error in getUserBoughtAmount:", error);
+    return 0;
+  }
 };
 const getOwnerSites = async (userId: String) => {
   const sitesRef = db.collection("users").doc(userId);
@@ -96,18 +110,19 @@ const getTopCashiersSelling = async (userId: String, range: number) => {
     .collection("orders")
     .where("type", "==", "sold");
   const snapshot = await ordersRef.get();
-  const cashierCounts: { [key: string]: number } = {};
+  const cashierTotals: { [key: string]: number } = {};
   snapshot.forEach((doc: any) => {
     const orderData = doc.data();
     if (orderData.executorType === "cashier") {
       const cashierId = orderData.executorId;
-      cashierCounts[cashierId] = (cashierCounts[cashierId] || 0) + 1;
+      cashierTotals[cashierId] =
+        (cashierTotals[cashierId] || 0) + (orderData.total || 0);
     }
   });
-  const sortedCashiers = Object.entries(cashierCounts)
+  const sortedCashiers = Object.entries(cashierTotals)
     .sort((a, b) => b[1] - a[1])
     .slice(0, range)
-    .map(([cashierId]) => cashierId);
+    .map(([cashierId, totalSold]) => ({ cashierId, totalSold }));
   return sortedCashiers;
 };
 
@@ -120,19 +135,27 @@ const getUserRevenue = async (userId: String, period: String) => {
 
   const snapshot = await ordersRef.get();
 
-  const orders: any[] = [];
-  snapshot.forEach((doc: any) => {
-    orders.push(doc.data());
-  });
+  const now = new Date();
+  let periodStart: Date;
+
+  if (period === "week") {
+    periodStart = new Date(now);
+    periodStart.setDate(periodStart.getDate() - periodStart.getDay());
+    periodStart.setHours(0, 0, 0, 0);
+  } else if (period === "month") {
+    periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  } else {
+    periodStart = new Date(now.getFullYear(), 0, 1);
+  }
 
   const revenueData: { [key: string]: number } = {};
 
   const getLabel = (date: Date): string => {
     if (period === "week") {
-      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-      return days[date.getDay()];
+      const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+      return days[date.getUTCDay()];
     } else if (period === "month") {
-      return date.getDate().toString();
+      return date.getUTCDate().toString();
     } else {
       const months = [
         "Jan",
@@ -148,18 +171,21 @@ const getUserRevenue = async (userId: String, period: String) => {
         "Nov",
         "Dec",
       ];
-      return months[date.getMonth()];
+      return months[date.getUTCMonth()];
     }
   };
 
   snapshot.forEach((doc: any) => {
     const orderData = doc.data();
+    const createdAtTimestamp = orderData.createdAt;
+    const createdAt = createdAtTimestamp?.toDate
+      ? createdAtTimestamp.toDate()
+      : new Date(createdAtTimestamp?._seconds * 1000 || 0);
 
-    const createdAt = orderData.createdAt?.toDate
-      ? orderData.createdAt.toDate()
-      : new Date(orderData.createdAt);
-    const label = getLabel(createdAt);
-    revenueData[label] = (revenueData[label] || 0) + (orderData.total || 0);
+    if (createdAt >= periodStart) {
+      const label = getLabel(createdAt);
+      revenueData[label] = (revenueData[label] || 0) + (orderData.total || 0);
+    }
   });
 
   let labels: string[];
@@ -192,6 +218,173 @@ const getUserRevenue = async (userId: String, period: String) => {
   return result;
 };
 
+const getTotalOrders = async (userId: String) => {
+  const ordersRef = db
+    .collection("users")
+    .doc(userId)
+    .collection("orders")
+    .where("type", "==", "sold");
+  const snapshot = await ordersRef.get();
+  return snapshot.size;
+};
+
+const getRecentOrders = async (userId: String, limit: number) => {
+  const ordersRef = db
+    .collection("users")
+    .doc(userId)
+    .collection("orders")
+    .orderBy("createdAt", "desc")
+    .limit(limit);
+  const snapshot = await ordersRef.get();
+  const orders: any[] = [];
+  snapshot.forEach((doc: any) => {
+    orders.push({
+      id: doc.id,
+      ...doc.data(),
+    });
+  });
+  return orders;
+};
+
+const getRevenueGrowth = async (userId: String, period: String) => {
+  const ordersRef = db
+    .collection("users")
+    .doc(userId)
+    .collection("orders")
+    .where("type", "==", "sold");
+  const snapshot = await ordersRef.get();
+
+  const now = new Date();
+  let currentPeriodStart: Date;
+  let previousPeriodStart: Date;
+
+  if (period === "week") {
+    currentPeriodStart = new Date(now);
+    currentPeriodStart.setDate(
+      currentPeriodStart.getDate() - currentPeriodStart.getDay(),
+    );
+    previousPeriodStart = new Date(currentPeriodStart);
+    previousPeriodStart.setDate(previousPeriodStart.getDate() - 7);
+  } else if (period === "month") {
+    currentPeriodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    previousPeriodStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  } else {
+    currentPeriodStart = new Date(now.getFullYear(), 0, 1);
+    previousPeriodStart = new Date(now.getFullYear() - 1, 0, 1);
+  }
+
+  let currentTotal = 0;
+  let previousTotal = 0;
+
+  snapshot.forEach((doc: any) => {
+    const orderData = doc.data();
+    const createdAt = orderData.createdAt?.toDate
+      ? orderData.createdAt.toDate()
+      : new Date(orderData.createdAt);
+
+    if (createdAt >= currentPeriodStart) {
+      currentTotal += orderData.total || 0;
+    } else if (
+      createdAt >= previousPeriodStart &&
+      createdAt < currentPeriodStart
+    ) {
+      previousTotal += orderData.total || 0;
+    }
+  });
+
+  let growth = 0;
+  if (previousTotal > 0) {
+    growth = ((currentTotal - previousTotal) / previousTotal) * 100;
+  } else if (currentTotal > 0) {
+    growth = 100;
+  }
+
+  return {
+    currentPeriodTotal: currentTotal,
+    previousPeriodTotal: previousTotal,
+    growth: Math.round(growth * 100) / 100,
+  };
+};
+
+const getTotalOrdersForPeriod = async (userId: String, period: String) => {
+  const ordersRef = db
+    .collection("users")
+    .doc(userId)
+    .collection("orders");
+  const snapshot = await ordersRef.get();
+
+  const now = new Date();
+  let periodStart: Date;
+
+  if (period === "week") {
+    periodStart = new Date(now);
+    periodStart.setDate(periodStart.getDate() - periodStart.getDay());
+  } else if (period === "month") {
+    periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  } else {
+    periodStart = new Date(now.getFullYear(), 0, 1);
+  }
+
+  let count = 0;
+  snapshot.forEach((doc: any) => {
+    const orderData = doc.data();
+    const createdAt = orderData.createdAt?.toDate
+      ? orderData.createdAt.toDate()
+      : new Date(orderData.createdAt);
+
+    if (createdAt >= periodStart) {
+      count++;
+    }
+  });
+
+  return count;
+};
+
+const getTotalRevenueForPeriod = async (userId: String, period: String) => {
+  const ordersRef = db
+    .collection("users")
+    .doc(userId)
+    .collection("orders")
+    .where("type", "==", "sold");
+  const snapshot = await ordersRef.get();
+
+  console.log("Total revenue - userId:", userId);
+  console.log("Total revenue - period:", period);
+  console.log("Total revenue - sold orders count:", snapshot.size);
+
+  const now = new Date();
+  let periodStart: Date;
+
+  if (period === "week") {
+    periodStart = new Date(now);
+    periodStart.setDate(periodStart.getDate() - periodStart.getDay());
+  } else if (period === "month") {
+    periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  } else {
+    periodStart = new Date(now.getFullYear(), 0, 1);
+  }
+
+  console.log("Period start:", periodStart);
+
+  let total = 0;
+  snapshot.forEach((doc: any) => {
+    const orderData = doc.data();
+    const createdAtTimestamp = orderData.createdAt;
+    const createdAt = createdAtTimestamp?.toDate
+      ? createdAtTimestamp.toDate()
+      : new Date(createdAtTimestamp?._seconds * 1000 || 0);
+
+    console.log("Order date:", createdAt, "total:", orderData.total);
+
+    if (createdAt >= periodStart) {
+      total += orderData.total || 0;
+    }
+  });
+
+  console.log("Total revenue:", total);
+  return total;
+};
+
 module.exports = {
   getUserSoldAmount,
   getUserBoughtAmount,
@@ -202,4 +395,9 @@ module.exports = {
   getTopCashiersSelling,
   getUserRevenue,
   getUserData,
+  getTotalOrders,
+  getRecentOrders,
+  getRevenueGrowth,
+  getTotalOrdersForPeriod,
+  getTotalRevenueForPeriod,
 };

@@ -7,6 +7,11 @@ const {
   getMostSoldProduct,
   getMostSellingCashiers,
   getUserRevenueData,
+  getTotalOrdersService,
+  getRecentOrdersService,
+  getRevenueGrowthService,
+  getTotalOrdersForPeriodService,
+  getTotalRevenueForPeriodService,
 } = require("./user.service");
 const { success, error } = require("../../core/utils/response");
 export const getUserSoldTotalController = async (req: any, res: any) => {
@@ -108,7 +113,6 @@ export const getTopCashiersController = async (req: any, res: any) => {
 export const getUserRevenueController = async (req: any, res: any) => {
   const userId = req.params.userId;
   const period = req.query.period || "week";
-  console.log(userId, period);
 
   try {
     const data = await getUserRevenueData(userId, period);
@@ -116,5 +120,65 @@ export const getUserRevenueController = async (req: any, res: any) => {
   } catch (err) {
     console.error("Error fetching user revenue:", err);
     return error(res, "Failed to fetch user revenue", 500);
+  }
+};
+
+export const getTotalOrdersController = async (req: any, res: any) => {
+  const userId = req.params.userId;
+  try {
+    const totalOrders = await getTotalOrdersService(userId);
+    return success(res, { totalOrders }, "Total orders fetched successfully");
+  } catch (err) {
+    console.error("Error fetching total orders:", err);
+    return error(res, "Failed to fetch total orders", 500);
+  }
+};
+
+export const getRecentOrdersController = async (req: any, res: any) => {
+  const userId = req.params.userId;
+  const limit = parseInt(req.query.limit) || 10;
+  try {
+    const recentOrders = await getRecentOrdersService(userId, limit);
+    return success(res, { recentOrders }, "Recent orders fetched successfully");
+  } catch (err) {
+    console.error("Error fetching recent orders:", err);
+    return error(res, "Failed to fetch recent orders", 500);
+  }
+};
+
+export const getRevenueGrowthController = async (req: any, res: any) => {
+  const userId = req.params.userId;
+  const period = req.query.period || "week";
+  try {
+    const growth = await getRevenueGrowthService(userId, period);
+    return success(res, { growth }, "Revenue growth fetched successfully");
+  } catch (err) {
+    console.error("Error fetching revenue growth:", err);
+    return error(res, "Failed to fetch revenue growth", 500);
+  }
+};
+
+export const getTotalOrdersForPeriodController = async (req: any, res: any) => {
+  const userId = req.params.userId;
+  const period = req.query.period || "week";
+  try {
+    const totalOrders = await getTotalOrdersForPeriodService(userId, period);
+    return success(res, { totalOrders }, "Total orders for period fetched successfully");
+  } catch (err) {
+    console.error("Error fetching total orders for period:", err);
+    return error(res, "Failed to fetch total orders for period", 500);
+  }
+};
+
+export const getTotalRevenueForPeriodController = async (req: any, res: any) => {
+  const userId = req.params.userId;
+  const period = req.query.period || "week";
+  console.log("Controller - getTotalRevenueForPeriod called:", userId, period);
+  try {
+    const totalRevenue = await getTotalRevenueForPeriodService(userId, period);
+    return success(res, { totalRevenue }, "Total revenue for period fetched successfully");
+  } catch (err) {
+    console.error("Error fetching total revenue for period:", err);
+    return error(res, "Failed to fetch total revenue for period", 500);
   }
 };

@@ -102,6 +102,80 @@ All endpoints (except /health) require Firebase ID token in the header:
          For month: labels are 1-30
          For year: labels are Jan-Dec
 
+8. GET /users/total-orders/:userId
+   Description: Get total number of sold orders for a user
+   Params: userId (path) - The user's ID
+   Query: None
+   Response:
+     {
+       "success": true,
+       "data": { "totalOrders": <number> },
+       "message": "Total orders fetched successfully"
+     }
+
+9. GET /users/recent-orders/:userId
+   Description: Get recent orders for a user
+   Params: userId (path) - The user's ID
+   Query: limit (optional, default=10) - Number of orders to return
+   Response:
+     {
+       "success": true,
+       "data": {
+         "recentOrders": [
+           {
+             "id": "<order_id>",
+             "total": 150,
+             "type": "sold",
+             "products": [...],
+             "createdAt": {...}
+           },
+           ...
+         ]
+       },
+       "message": "Recent orders fetched successfully"
+     }
+
+10. GET /users/revenue-growth/:userId
+   Description: Get revenue growth percentage compared to previous period
+   Params: userId (path) - The user's ID
+   Query: period (optional) - "week", "month", or "year" (default: "week")
+   Response:
+     {
+       "success": true,
+       "data": {
+         "growth": {
+           "currentPeriodTotal": 1500,
+           "previousPeriodTotal": 1200,
+           "growth": 25.0
+         }
+       },
+       "message": "Revenue growth fetched successfully"
+     }
+
+   Note: growth is percentage (positive = increase, negative = decrease)
+
+11. GET /users/total-orders-period/:userId
+   Description: Get total number of sold orders for this week/month/year
+   Params: userId (path) - The user's ID
+   Query: period (optional) - "week", "month", or "year" (default: "week")
+   Response:
+     {
+       "success": true,
+       "data": { "totalOrders": <number> },
+       "message": "Total orders for period fetched successfully"
+     }
+
+12. GET /users/total-revenue-period/:userId
+   Description: Get total revenue for this week/month/year
+   Params: userId (path) - The user's ID
+   Query: period (optional) - "week", "month", or "year" (default: "week")
+   Response:
+     {
+       "success": true,
+       "data": { "totalRevenue": <number> },
+       "message": "Total revenue for period fetched successfully"
+     }
+
 ================================================================================
                            OTHER ENDPOINTS
 ================================================================================
@@ -153,5 +227,36 @@ const result = await callApi('/users/revenue/user123', token, { period: 'month' 
 
 // Example: Get yearly revenue
 const result = await callApi('/users/revenue/user123', token, { period: 'year' });
+
+// Example: Get total orders
+const result = await callApi('/users/total-orders/user123', token);
+// Result: { success: true, data: { totalOrders: 42 }, message: "..." }
+
+// Example: Get recent orders with custom limit
+const result = await callApi('/users/recent-orders/user123', token, { limit: 5 });
+
+// Example: Get weekly revenue growth
+const result = await callApi('/users/revenue-growth/user123', token);
+// Result: { success: true, data: { growth: { currentPeriodTotal: 1500, previousPeriodTotal: 1200, growth: 25 } }, message: "..." }
+
+// Example: Get monthly revenue growth
+const result = await callApi('/users/revenue-growth/user123', token, { period: 'month' });
+
+// Example: Get yearly revenue growth
+const result = await callApi('/users/revenue-growth/user123', token, { period: 'year' });
+
+// Example: Get total orders for this week (default)
+const result = await callApi('/users/total-orders-period/user123', token);
+// Result: { success: true, data: { totalOrders: 15 }, message: "..." }
+
+// Example: Get total orders for this month
+const result = await callApi('/users/total-orders-period/user123', token, { period: 'month' });
+
+// Example: Get total revenue for this week (default)
+const result = await callApi('/users/total-revenue-period/user123', token);
+// Result: { success: true, data: { totalRevenue: 2500 }, message: "..." }
+
+// Example: Get total revenue for this year
+const result = await callApi('/users/total-revenue-period/user123', token, { period: 'year' });
 
 ================================================================================

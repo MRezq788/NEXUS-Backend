@@ -7,6 +7,11 @@ import {
   getUserSoldTotalForSpecificDayController,
   getTopCashiersController,
   getUserRevenueController,
+  getTotalOrdersController,
+  getRecentOrdersController,
+  getRevenueGrowthController,
+  getTotalOrdersForPeriodController,
+  getTotalRevenueForPeriodController,
 } from "./user.controller";
 import { verifyToken } from "../../core/middleware/auth.middleware";
 
@@ -31,5 +36,18 @@ router.get(
   getTopCashiersController
 );
 router.get("/revenue/:userId", verifyToken, getUserRevenueController);
+router.get("/total-orders/:userId", verifyToken, getTotalOrdersController);
+router.get("/recent-orders/:userId", verifyToken, getRecentOrdersController);
+router.get("/revenue-growth/:userId", verifyToken, getRevenueGrowthController);
+router.get(
+  "/total-orders-period/:userId",
+  verifyToken,
+  getTotalOrdersForPeriodController
+);
+router.get(
+  "/total-revenue-period/:userId",
+  verifyToken,
+  getTotalRevenueForPeriodController
+);
 
 export default router;
