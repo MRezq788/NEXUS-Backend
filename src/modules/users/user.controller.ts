@@ -1,4 +1,13 @@
-const { getUserSoldTotal } = require("./user.service");
+const {
+  getUserSoldTotal,
+  getUserBoughtTotal,
+  getUserOwnedSites,
+  getUserRole,
+  getUserSoldTotalForSpecificDayService,
+  getMostSoldProduct,
+  getMostSellingCashiers,
+  getUserRevenueData,
+} = require("./user.service");
 const { success, error } = require("../../core/utils/response");
 export const getUserSoldTotalController = async (req: any, res: any) => {
   const userId = req.params.userId;
@@ -93,5 +102,19 @@ export const getTopCashiersController = async (req: any, res: any) => {
   } catch (err) {
     console.error("Error fetching user's top cashiers:", err);
     return error(res, "Failed to fetch user's top cashiers", 500);
+  }
+};
+
+export const getUserRevenueController = async (req: any, res: any) => {
+  const userId = req.params.userId;
+  const period = req.query.period || "week";
+  console.log(userId, period);
+
+  try {
+    const data = await getUserRevenueData(userId, period);
+    return success(res, { data }, "User revenue fetched successfully");
+  } catch (err) {
+    console.error("Error fetching user revenue:", err);
+    return error(res, "Failed to fetch user revenue", 500);
   }
 };

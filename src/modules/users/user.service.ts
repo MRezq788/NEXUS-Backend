@@ -6,8 +6,9 @@ const {
   userRole,
   getUserSoldTotalForSpecificDay,
   getMostSoldItems,
-  getTopCashiersSelling,
   getUserData,
+  getTopCashiersSelling,
+  getUserRevenue,
 } = require("./user.repository");
 
 async function getUserSoldTotal(userId: String) {
@@ -30,17 +31,21 @@ async function getUserSoldTotalForSpecificDayService(
 }
 async function getMostSoldProduct(userId: String, range: number) {
   const mostSoldPoductsId = await getMostSoldItems(userId, range);
+  console.log(mostSoldPoductsId);
+
   const mostSoldProducts = [];
   for (const productId of mostSoldPoductsId) {
-    const product = await getProductDetails(productId);
+    const product = await getProductDetails(productId, userId);
     if (product) {
       mostSoldProducts.push(product);
     }
   }
+
   return mostSoldProducts;
 }
 async function getMostSellingCashiers(userId: String, range: number) {
   const mostSellingCashiersId = await getTopCashiersSelling(userId, range);
+
   const mostSellingCashiers = [];
   for (const cashierId of mostSellingCashiersId) {
     const cashier = await getUserData(cashierId);
@@ -49,6 +54,9 @@ async function getMostSellingCashiers(userId: String, range: number) {
     }
   }
   return mostSellingCashiers;
+}
+async function getUserRevenueData(userId: String, period: String) {
+  return await getUserRevenue(userId, period);
 }
 
 module.exports = {
@@ -59,4 +67,5 @@ module.exports = {
   getUserSoldTotalForSpecificDayService,
   getMostSoldProduct,
   getMostSellingCashiers,
+  getUserRevenueData,
 };

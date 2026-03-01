@@ -76,7 +76,7 @@ const getMostSoldItems = async (userId: String, range: number) => {
   const productCounts: { [key: string]: number } = {};
   snapshot.forEach((doc: any) => {
     const orderData = doc.data();
-    const items = orderData.items || [];
+    const items = orderData.products || [];
     items.forEach((item: any) => {
       const productId = item.productId;
       productCounts[productId] =
@@ -110,6 +110,88 @@ const getTopCashiersSelling = async (userId: String, range: number) => {
     .map(([cashierId]) => cashierId);
   return sortedCashiers;
 };
+
+const getUserRevenue = async (userId: String, period: String) => {
+  const ordersRef = db
+    .collection("users")
+    .doc(userId)
+    .collection("orders")
+    .where("type", "==", "sold");
+
+  const snapshot = await ordersRef.get();
+
+  const orders: any[] = [];
+  snapshot.forEach((doc: any) => {
+    orders.push(doc.data());
+  });
+
+  const revenueData: { [key: string]: number } = {};
+
+  const getLabel = (date: Date): string => {
+    if (period === "week") {
+      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      return days[date.getDay()];
+    } else if (period === "month") {
+      return date.getDate().toString();
+    } else {
+      const months = [
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec",
+      ];
+      return months[date.getMonth()];
+    }
+  };
+
+  snapshot.forEach((doc: any) => {
+    const orderData = doc.data();
+
+    const createdAt = orderData.createdAt?.toDate
+      ? orderData.createdAt.toDate()
+      : new Date(orderData.createdAt);
+    const label = getLabel(createdAt);
+    revenueData[label] = (revenueData[label] || 0) + (orderData.total || 0);
+  });
+
+  let labels: string[];
+  if (period === "week") {
+    labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  } else if (period === "month") {
+    labels = Array.from({ length: 30 }, (_, i) => (i + 1).toString());
+  } else {
+    labels = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
+  }
+
+  const result = labels.map((label) => ({
+    label,
+    value: revenueData[label] || 0,
+  }));
+
+  return result;
+};
+
 module.exports = {
   getUserSoldAmount,
   getUserBoughtAmount,
@@ -118,4 +200,6 @@ module.exports = {
   getUserSoldTotalForSpecificDay,
   getMostSoldItems,
   getTopCashiersSelling,
+  getUserRevenue,
+  getUserData,
 };

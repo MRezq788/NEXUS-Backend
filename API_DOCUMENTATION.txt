@@ -1,0 +1,157 @@
+================================================================================
+                        BACKEND API DOCUMENTATION
+================================================================================
+
+BASE URL: http://localhost:3000/api
+
+AUTHENTICATION:
+All endpoints (except /health) require Firebase ID token in the header:
+  Authorization: Bearer <firebase_id_token>
+
+================================================================================
+                              USERS ENDPOINTS
+================================================================================
+
+1. GET /users/sold-total/:userId
+   Description: Get total amount sold by a user
+   Params: userId (path) - The user's ID
+   Query: None
+   Response:
+     {
+       "success": true,
+       "data": { "totalSold": <number> },
+       "message": "User sold total fetched successfully"
+     }
+
+2. GET /users/bought-total/:userId
+   Description: Get total amount bought by a user
+   Params: userId (path) - The user's ID
+   Query: None
+   Response:
+     {
+       "success": true,
+       "data": { "totalBought": <number> },
+       "message": "User bought total fetched successfully"
+     }
+
+3. GET /users/owned-sites/:userId
+   Description: Get sites owned by a business owner
+   Params: userId (path) - The user's ID
+   Query: None
+   Response:
+     {
+       "success": true,
+       "data": {
+         "ownedSites": [<site_id>, ...],
+         "isUserOwner": <boolean>
+       },
+       "message": "User owned sites fetched successfully"
+     }
+
+4. GET /users/most-sold-products/:userId
+   Description: Get most sold products for a user
+   Params: userId (path) - The user's ID
+   Query: range (optional, default=5) - Number of products to return
+   Response:
+     {
+       "success": true,
+       "data": { "mostSoldProducts": [<product>, ...] },
+       "message": "User's most sold products fetched successfully"
+     }
+
+5. GET /users/sold-total/:userId/specific-day
+   Description: Get total sold for a specific day
+   Params: userId (path) - The user's ID
+   Query: date (required) - Date string (e.g., "2024-01-15")
+   Response:
+     {
+       "success": true,
+       "data": { "totalSold": <number> },
+       "message": "User sold total for specific day fetched successfully"
+     }
+
+6. GET /users/most-selling-cashiers/:userId
+   Description: Get top selling cashiers for a user
+   Params: userId (path) - The user's ID
+   Query: range (optional, default=5) - Number of cashiers to return
+   Response:
+     {
+       "success": true,
+       "data": { "topCashiers": [<cashier>, ...] },
+       "message": "User's top cashiers fetched successfully"
+     }
+
+7. GET /users/revenue/:userId
+   Description: Get user revenue for charting (week/month/year)
+   Params: userId (path) - The user's ID
+   Query: period (optional) - "week", "month", or "year" (default: "week")
+   Response:
+     {
+       "success": true,
+       "data": {
+         "data": [
+           { "label": "Mon", "value": 65 },
+           { "label": "Tue", "value": 45 },
+           ...
+         ]
+       },
+       "message": "User revenue fetched successfully"
+     }
+
+   Note: For week: labels are Mon-Sun
+         For month: labels are 1-30
+         For year: labels are Jan-Dec
+
+================================================================================
+                           OTHER ENDPOINTS
+================================================================================
+
+GET /health
+   Description: Health check endpoint
+   Params: None
+   Query: None
+   Response:
+     { "status": "ok" }
+
+================================================================================
+                       FRONTEND CALL EXAMPLES
+================================================================================
+
+// Get Firebase ID Token
+const token = await user.getIdToken();
+
+// Common fetch wrapper
+async function callApi(endpoint, token, params = {}) {
+  const queryString = new URLSearchParams(params).toString();
+  const url = `http://localhost:3000/api${endpoint}${queryString ? '?' + queryString : ''}`;
+
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  });
+  return response.json();
+}
+
+// Example: Get user sold total
+const result = await callApi('/users/sold-total/user123', token);
+// Result: { success: true, data: { totalSold: 1500 }, message: "..." }
+
+// Example: Get most sold products with custom range
+const result = await callApi('/users/most-sold-products/user123', token, { range: 10 });
+
+// Example: Get sold total for specific day
+const result = await callApi('/users/sold-total/user123/specific-day', token, { date: '2024-01-15' });
+
+// Example: Get weekly revenue (default)
+const result = await callApi('/users/revenue/user123', token);
+// Result: { success: true, data: { data: [{ label: "Mon", value: 65 }, ...] }, message: "..." }
+
+// Example: Get monthly revenue
+const result = await callApi('/users/revenue/user123', token, { period: 'month' });
+
+// Example: Get yearly revenue
+const result = await callApi('/users/revenue/user123', token, { period: 'year' });
+
+================================================================================
