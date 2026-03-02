@@ -1,5 +1,5 @@
 import { admin } from '../../core/config/firebase';
-
+import { AggregateField } from 'firebase-admin/firestore';
 const db = admin.firestore();
 const usersCollection = db.collection('users');
 
@@ -105,8 +105,8 @@ export const getUserSoldTotalForSpecificDay = async (userId: string, date: Date)
     .where("createdAt", "<=", endOfDay);
 
   const snapshot = await ordersRef.aggregate({
-    totalAmount: db.constructor.AggregateField.sum("total"),
-  });
+    totalAmount: AggregateField.sum("total"),
+  }).get(); 
 
   return snapshot.data().totalAmount;
 };

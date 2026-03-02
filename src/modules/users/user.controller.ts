@@ -1,4 +1,6 @@
-const {
+import { Request, Response } from 'express';
+import { success, error } from '../../core/utils/response';
+import {
   getUserSoldTotal,
   getUserBoughtTotal,
   getUserOwnedSites,
@@ -12,10 +14,11 @@ const {
   getRevenueGrowthService,
   getTotalOrdersForPeriodService,
   getTotalRevenueForPeriodService,
-} = require("./user.service");
-const { success, error } = require("../../core/utils/response");
-export const getUserSoldTotalController = async (req: any, res: any) => {
-  const userId = req.params.userId;
+  syncNewUser 
+} from './user.service';
+
+export const getUserSoldTotalController = async (req: Request, res: Response) => {
+  const userId = req.params.userId as string;
   try {
     const totalSold = await getUserSoldTotal(userId);
     return success(res, { totalSold }, "User sold total fetched successfully");
@@ -25,8 +28,8 @@ export const getUserSoldTotalController = async (req: any, res: any) => {
   }
 };
 
-export const getUserBoughtTotalController = async (req: any, res: any) => {
-  const userId = req.params.userId;
+export const getUserBoughtTotalController = async (req: Request, res: Response) => {
+  const userId = req.params.userId as string;
   try {
     const totalBought = await getUserBoughtTotal(userId);
     return success(
@@ -40,10 +43,10 @@ export const getUserBoughtTotalController = async (req: any, res: any) => {
   }
 };
 
-export const getUserOwnedSitesController = async (req: any, res: any) => {
-  const userId = req.params.userId;
-  const isUserOwner = (await getUserRole(userId)) === "business_owner";
+export const getUserOwnedSitesController = async (req: Request, res: Response) => {
+  const userId = req.params.userId as string;
   try {
+    const isUserOwner = (await getUserRole(userId)) === "business_owner";
     if (!isUserOwner) {
       return error(res, "User is not a business owner", 403);
     }
@@ -59,12 +62,9 @@ export const getUserOwnedSitesController = async (req: any, res: any) => {
   }
 };
 
-export const getUserSoldTotalForSpecificDayController = async (
-  req: any,
-  res: any,
-) => {
-  const userId = req.params.userId;
-  const date = new Date(req.query.date);
+export const getUserSoldTotalForSpecificDayController = async (req: Request, res: Response) => {
+  const userId = req.params.userId as string;
+  const date = new Date(req.query.date as string);
   try {
     const totalSold = await getUserSoldTotalForSpecificDayService(userId, date);
     return success(
@@ -78,9 +78,9 @@ export const getUserSoldTotalForSpecificDayController = async (
   }
 };
 
-export const getMostSoldProductsController = async (req: any, res: any) => {
-  const userId = req.params.userId;
-  const range = parseInt(req.query.range) || 5;
+export const getMostSoldProductsController = async (req: Request, res: Response) => {
+  const userId = req.params.userId as string;
+  const range = parseInt(req.query.range as string) || 5;
   try {
     const mostSoldProducts = await getMostSoldProduct(userId, range);
     return success(
@@ -94,9 +94,9 @@ export const getMostSoldProductsController = async (req: any, res: any) => {
   }
 };
 
-export const getTopCashiersController = async (req: any, res: any) => {
-  const userId = req.params.userId;
-  const range = parseInt(req.query.range) || 5;
+export const getTopCashiersController = async (req: Request, res: Response) => {
+  const userId = req.params.userId as string;
+  const range = parseInt(req.query.range as string) || 5;
   try {
     const topCashiers = await getMostSellingCashiers(userId, range);
     return success(
@@ -110,9 +110,9 @@ export const getTopCashiersController = async (req: any, res: any) => {
   }
 };
 
-export const getUserRevenueController = async (req: any, res: any) => {
-  const userId = req.params.userId;
-  const period = req.query.period || "week";
+export const getUserRevenueController = async (req: Request, res: Response) => {
+  const userId = req.params.userId as string;
+  const period = (req.query.period as string) || "week";
 
   try {
     const data = await getUserRevenueData(userId, period);
@@ -123,8 +123,8 @@ export const getUserRevenueController = async (req: any, res: any) => {
   }
 };
 
-export const getTotalOrdersController = async (req: any, res: any) => {
-  const userId = req.params.userId;
+export const getTotalOrdersController = async (req: Request, res: Response) => {
+  const userId = req.params.userId as string;
   try {
     const totalOrders = await getTotalOrdersService(userId);
     return success(res, { totalOrders }, "Total orders fetched successfully");
@@ -134,9 +134,9 @@ export const getTotalOrdersController = async (req: any, res: any) => {
   }
 };
 
-export const getRecentOrdersController = async (req: any, res: any) => {
-  const userId = req.params.userId;
-  const limit = parseInt(req.query.limit) || 10;
+export const getRecentOrdersController = async (req: Request, res: Response) => {
+  const userId = req.params.userId as string;
+  const limit = parseInt(req.query.limit as string) || 10;
   try {
     const recentOrders = await getRecentOrdersService(userId, limit);
     return success(res, { recentOrders }, "Recent orders fetched successfully");
@@ -146,9 +146,9 @@ export const getRecentOrdersController = async (req: any, res: any) => {
   }
 };
 
-export const getRevenueGrowthController = async (req: any, res: any) => {
-  const userId = req.params.userId;
-  const period = req.query.period || "week";
+export const getRevenueGrowthController = async (req: Request, res: Response) => {
+  const userId = req.params.userId as string;
+  const period = (req.query.period as string) || "week";
   try {
     const growth = await getRevenueGrowthService(userId, period);
     return success(res, { growth }, "Revenue growth fetched successfully");
@@ -158,9 +158,9 @@ export const getRevenueGrowthController = async (req: any, res: any) => {
   }
 };
 
-export const getTotalOrdersForPeriodController = async (req: any, res: any) => {
-  const userId = req.params.userId;
-  const period = req.query.period || "week";
+export const getTotalOrdersForPeriodController = async (req: Request, res: Response) => {
+  const userId = req.params.userId as string;
+  const period = (req.query.period as string) || "week";
   try {
     const totalOrders = await getTotalOrdersForPeriodService(userId, period);
     return success(res, { totalOrders }, "Total orders for period fetched successfully");
@@ -170,9 +170,9 @@ export const getTotalOrdersForPeriodController = async (req: any, res: any) => {
   }
 };
 
-export const getTotalRevenueForPeriodController = async (req: any, res: any) => {
-  const userId = req.params.userId;
-  const period = req.query.period || "week";
+export const getTotalRevenueForPeriodController = async (req: Request, res: Response) => {
+  const userId = req.params.userId as string;
+  const period = (req.query.period as string) || "week";
   console.log("Controller - getTotalRevenueForPeriod called:", userId, period);
   try {
     const totalRevenue = await getTotalRevenueForPeriodService(userId, period);
@@ -182,10 +182,8 @@ export const getTotalRevenueForPeriodController = async (req: any, res: any) => 
     return error(res, "Failed to fetch total revenue for period", 500);
   }
 };
-import { Request, Response } from 'express';
-import * as userService from './user.service';
 
-export const syncUser = async (req: Request, res: Response): Promise<void> => {
+export const syncUser = async (req: Request | any, res: Response): Promise<void> => {
   try {
     const { name, email, role } = req.body;
 
@@ -208,7 +206,7 @@ export const syncUser = async (req: Request, res: Response): Promise<void> => {
     }
 
     // 3. Call the Service (Business Logic)
-    const result = await userService.syncNewUser({ name, email, role });
+    const result = await syncNewUser({ name, email, role });
 
     // 4. Return HTTP Response
     res.status(201).json({ 

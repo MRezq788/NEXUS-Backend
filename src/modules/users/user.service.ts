@@ -1,5 +1,5 @@
-const { getProductDetails } = require("../products/product.repository");
-const {
+import { getProductDetails } from "../products/product.repository";
+import {
   getUserSoldAmount,
   getUserBoughtAmount,
   getOwnerSites,
@@ -14,31 +14,35 @@ const {
   getRevenueGrowth,
   getTotalOrdersForPeriod,
   getTotalRevenueForPeriod,
-} = require("./user.repository");
+  createUserDocument,
+  CreateUserData
+} from "./user.repository";
 
-async function getUserSoldTotal(userId: String) {
+export async function getUserSoldTotal(userId: string) {
   return await getUserSoldAmount(userId);
 }
-async function getUserBoughtTotal(userId: String) {
+
+export async function getUserBoughtTotal(userId: string) {
   return await getUserBoughtAmount(userId);
 }
-async function getUserOwnedSites(userId: String) {
+
+export async function getUserOwnedSites(userId: string) {
   return await getOwnerSites(userId);
 }
-async function getUserRole(userId: String) {
+
+export async function getUserRole(userId: string) {
   return await userRole(userId);
 }
-async function getUserSoldTotalForSpecificDayService(
-  userId: String,
-  date: Date,
-) {
+
+export async function getUserSoldTotalForSpecificDayService(userId: string, date: Date) {
   return await getUserSoldTotalForSpecificDay(userId, date);
 }
-async function getMostSoldProduct(userId: String, range: number) {
-  const mostSoldPoductsId = await getMostSoldItems(userId, range);
+
+export async function getMostSoldProduct(userId: string, range: number) {
+  const mostSoldProductsId = await getMostSoldItems(userId, range);
 
   const mostSoldProducts = [];
-  for (const productId of mostSoldPoductsId) {
+  for (const productId of mostSoldProductsId) {
     const product = await getProductDetails(productId, userId);
     if (product) {
       mostSoldProducts.push(product);
@@ -47,7 +51,8 @@ async function getMostSoldProduct(userId: String, range: number) {
 
   return mostSoldProducts;
 }
-async function getMostSellingCashiers(userId: String, range: number) {
+
+export async function getMostSellingCashiers(userId: string, range: number) {
   const cashiersWithTotals = await getTopCashiersSelling(userId, range);
 
   const mostSellingCashiers = [];
@@ -62,42 +67,30 @@ async function getMostSellingCashiers(userId: String, range: number) {
   }
   return mostSellingCashiers;
 }
-async function getUserRevenueData(userId: String, period: String) {
+
+export async function getUserRevenueData(userId: string, period: string) {
   return await getUserRevenue(userId, period);
 }
-async function getTotalOrdersService(userId: String) {
+
+export async function getTotalOrdersService(userId: string) {
   return await getTotalOrders(userId);
 }
-async function getRecentOrdersService(userId: String, limit: number) {
+
+export async function getRecentOrdersService(userId: string, limit: number) {
   return await getRecentOrders(userId, limit);
 }
-async function getRevenueGrowthService(userId: String, period: String) {
+
+export async function getRevenueGrowthService(userId: string, period: string) {
   return await getRevenueGrowth(userId, period);
 }
-async function getTotalOrdersForPeriodService(userId: String, period: String) {
+
+export async function getTotalOrdersForPeriodService(userId: string, period: string) {
   return await getTotalOrdersForPeriod(userId, period);
 }
-async function getTotalRevenueForPeriodService(userId: String, period: String) {
+
+export async function getTotalRevenueForPeriodService(userId: string, period: string) {
   return await getTotalRevenueForPeriod(userId, period);
 }
-
-module.exports = {
-  getUserSoldTotal,
-  getUserBoughtTotal,
-  getUserOwnedSites,
-  getUserRole,
-  getUserSoldTotalForSpecificDayService,
-  getMostSoldProduct,
-  getMostSellingCashiers,
-  getUserRevenueData,
-  getTotalOrdersService,
-  getRecentOrdersService,
-  getRevenueGrowthService,
-  getTotalOrdersForPeriodService,
-  getTotalRevenueForPeriodService,
-};
-import * as userRepository from './user.repository';
-import { CreateUserData } from './user.repository';
 
 export const syncNewUser = async (data: CreateUserData) => {
   // Business Logic: Ensure the role is one of the allowed types
@@ -108,7 +101,7 @@ export const syncNewUser = async (data: CreateUserData) => {
   }
 
   // Delegate the actual database creation to the repository
-  const createdUser = await userRepository.createUserDocument(data);
+  const createdUser = await createUserDocument(data);
   
   return createdUser;
 };

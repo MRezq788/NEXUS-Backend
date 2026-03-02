@@ -1,17 +1,14 @@
-export {};
-const { getFirestore } = require("firebase-admin/firestore");
-const db = getFirestore();
+import { admin } from '../../core/config/firebase';
 
-const getProductDetails = async (productId: String, userId: String) => {
+const db = admin.firestore();
+
+export const getProductDetails = async (productId: string, userId: string) => {
   const productRef = db
     .collection("users")
     .doc(userId)
     .collection("products")
     .doc(productId);
+    
   const snapshot = await productRef.get();
   return snapshot.data() || {};
-};
-
-module.exports = {
-  getProductDetails,
 };
