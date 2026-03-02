@@ -5,7 +5,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 
-import { db } from '../../core/config/firebase';
+import { db } from '../../core/config/clientFirebase';
 
 const USERS_COLLECTION = 'users';
 const ORDERS_SUBCOLLECTION = 'orders';

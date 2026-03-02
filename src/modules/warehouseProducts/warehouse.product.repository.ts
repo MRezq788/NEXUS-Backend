@@ -14,7 +14,7 @@ import {
   DocumentSnapshot,
   DocumentData,
 } from 'firebase/firestore';
-import { db } from '../../core/config/firebase';
+import { db } from '../../core/config/clientFirebase';
 import { Product, ProductStatus, computeStatus, formatDate } from './warehouse.product.model';
 
 // Get user's products subcollection reference

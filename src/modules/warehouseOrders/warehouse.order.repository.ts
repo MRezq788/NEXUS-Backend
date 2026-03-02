@@ -14,7 +14,7 @@ import {
   DocumentData,
   arrayUnion,
 } from 'firebase/firestore';
-import { db } from '../../core/config/firebase';
+import { db } from '../../core/config/clientFirebase';
 import { Order, OrderStatus, formatDate } from './warehouse.order.model';
 
 // Get user's orders subcollection reference

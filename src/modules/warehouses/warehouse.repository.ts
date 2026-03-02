@@ -10,7 +10,7 @@ import {
   QueryConstraint,
 } from 'firebase/firestore';
 
-import { db } from '../../core/config/firebase';
+import { db } from '../../core/config/clientFirebase';
 
 const COLLECTION_NAME = 'users';
 
