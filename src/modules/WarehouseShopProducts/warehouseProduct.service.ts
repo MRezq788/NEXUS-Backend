@@ -1,4 +1,4 @@
-import * as repository from './warehouseproduct.repository';
+import * as repository from './warehouseProduct.repository';
 
 interface FetchParams {
   email: string,

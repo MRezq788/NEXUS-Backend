@@ -1,12 +1,12 @@
 import { Request, Response } from 'express';
-import * as service from './warehouseproduct.service';
-import { success, error } from '../../core/utils/response';
+import * as service from './warehouseProduct.service';
+import { successResponse, errorResponse } from '../../core/utils/response';
 
 export const getProduct = async (req: Request, res: Response) => {
   try {
     const email = req.headers["x-user-email"] as string | undefined; 
     if (!email) { 
-        return error(res, "Missing X-User-Email header"); 
+        return errorResponse(res, "Missing X-User-Email header"); 
     }
 
     const limitParam = req.query.limit;
@@ -20,7 +20,7 @@ export const getProduct = async (req: Request, res: Response) => {
     if (limitParam !== undefined) {
       const parsed = Number(limitParam);
       if (isNaN(parsed)) {
-        return error(res, 'limit must be a number');
+        return errorResponse(res, 'limit must be a number');
       }
       limit = parsed;
     }
@@ -40,10 +40,10 @@ export const getProduct = async (req: Request, res: Response) => {
       search,
     });
 
-    return success(res, result);
+    return successResponse(res, result);
 
   } catch (err) {
     console.error(err);
-    return error(res, (err as Error).message || 'Failed to fetch inventory', 500);
+    return errorResponse(res, (err as Error).message || 'Failed to fetch inventory', 500);
   }
 };

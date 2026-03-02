@@ -1,12 +1,12 @@
 import { Request, Response } from 'express';
 import * as service from './businessInventory.service';
-import { success, error } from '../../core/utils/response';
+import { successResponse, errorResponse } from '../../core/utils/response';
 
 export const getBusinessInventory = async (req: Request, res: Response) => {
   try {
     const email = req.headers["x-user-email"] as string | undefined; 
     if (!email) { 
-        return error(res, "Missing X-User-Email header"); 
+        return errorResponse(res, "Missing X-User-Email header"); 
     }
 
     const limitParam = req.query.limit;
@@ -22,7 +22,7 @@ export const getBusinessInventory = async (req: Request, res: Response) => {
     if (limitParam !== undefined) {
       const parsed = Number(limitParam);
       if (isNaN(parsed)) {
-        return error(res, 'limit must be a number');
+        return errorResponse(res, 'limit must be a number');
       }
       limit = parsed;
     }
@@ -37,7 +37,7 @@ export const getBusinessInventory = async (req: Request, res: Response) => {
 
     if (inStockParam !== undefined) {
       if (inStockParam !== 'true' && inStockParam !== 'false') {
-        return error(res, 'inStock must be true or false');
+        return errorResponse(res, 'inStock must be true or false');
       }
       inStock = inStockParam === 'true';
     }
@@ -50,11 +50,11 @@ export const getBusinessInventory = async (req: Request, res: Response) => {
       inStock,
     });
 
-    return success(res, result);
+    return successResponse(res, result);
 
   } catch (err) {
     console.error(err);
-    return error(res, (err as Error).message || 'Failed to fetch inventory', 500);
+    return errorResponse(res, (err as Error).message || 'Failed to fetch inventory', 500);
   }
 };
 
@@ -62,7 +62,7 @@ export const getProductsCount = async (req: Request, res: Response) => {
   try {
     const email = req.headers["x-user-email"] as string | undefined; 
     if (!email) { 
-        return error(res, "Missing X-User-Email header"); 
+        return errorResponse(res, "Missing X-User-Email header"); 
     }
 
     const inStockParam = req.query.inStock;
@@ -71,17 +71,17 @@ export const getProductsCount = async (req: Request, res: Response) => {
 
     if (inStockParam !== undefined) {
       if (inStockParam !== 'true' && inStockParam !== 'false') {
-        return error(res, 'inStock must be true or false');
+        return errorResponse(res, 'inStock must be true or false');
       }
       inStock = inStockParam === 'true';
     }
 
     const count = await service.fetchProductsCount({ email, inStock });
 
-    return success(res, { count });
+    return successResponse(res, { count });
 
   } catch (err) {
     console.error(err);
-    return error(res, (err as Error).message || 'Failed to fetch count', 500);
+    return errorResponse(res, (err as Error).message || 'Failed to fetch count', 500);
   }
 };

@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import * as service from './warehouse.service';
-import { success, error } from '../../core/utils/response';
+import { successResponse, errorResponse } from '../../core/utils/response';
 
 export const getWarehouse = async (req: Request, res: Response) => {
   try {
@@ -17,7 +17,7 @@ export const getWarehouse = async (req: Request, res: Response) => {
     if (limitParam !== undefined) {
       const parsed = Number(limitParam);
       if (isNaN(parsed)) {
-        return error(res, 'limit must be a number');
+        return errorResponse(res, 'limit must be a number');
       }
       limit = parsed;      
     }
@@ -41,10 +41,10 @@ export const getWarehouse = async (req: Request, res: Response) => {
       category,
     });    
 
-    return success(res, result);
+    return successResponse(res, result);
 
   } catch (err) {
     console.error(err);
-    return error(res, (err as Error).message || 'Failed to fetch inventory', 500);
+    return errorResponse(res, (err as Error).message || 'Failed to fetch inventory', 500);
   }
 };
