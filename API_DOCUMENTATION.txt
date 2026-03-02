@@ -1,0 +1,262 @@
+================================================================================
+                        BACKEND API DOCUMENTATION
+================================================================================
+
+BASE URL: http://localhost:3000/api
+
+AUTHENTICATION:
+All endpoints (except /health) require Firebase ID token in the header:
+  Authorization: Bearer <firebase_id_token>
+
+================================================================================
+                              USERS ENDPOINTS
+================================================================================
+
+1. GET /users/sold-total/:userId
+   Description: Get total amount sold by a user
+   Params: userId (path) - The user's ID
+   Query: None
+   Response:
+     {
+       "success": true,
+       "data": { "totalSold": <number> },
+       "message": "User sold total fetched successfully"
+     }
+
+2. GET /users/bought-total/:userId
+   Description: Get total amount bought by a user
+   Params: userId (path) - The user's ID
+   Query: None
+   Response:
+     {
+       "success": true,
+       "data": { "totalBought": <number> },
+       "message": "User bought total fetched successfully"
+     }
+
+3. GET /users/owned-sites/:userId
+   Description: Get sites owned by a business owner
+   Params: userId (path) - The user's ID
+   Query: None
+   Response:
+     {
+       "success": true,
+       "data": {
+         "ownedSites": [<site_id>, ...],
+         "isUserOwner": <boolean>
+       },
+       "message": "User owned sites fetched successfully"
+     }
+
+4. GET /users/most-sold-products/:userId
+   Description: Get most sold products for a user
+   Params: userId (path) - The user's ID
+   Query: range (optional, default=5) - Number of products to return
+   Response:
+     {
+       "success": true,
+       "data": { "mostSoldProducts": [<product>, ...] },
+       "message": "User's most sold products fetched successfully"
+     }
+
+5. GET /users/sold-total/:userId/specific-day
+   Description: Get total sold for a specific day
+   Params: userId (path) - The user's ID
+   Query: date (required) - Date string (e.g., "2024-01-15")
+   Response:
+     {
+       "success": true,
+       "data": { "totalSold": <number> },
+       "message": "User sold total for specific day fetched successfully"
+     }
+
+6. GET /users/most-selling-cashiers/:userId
+   Description: Get top selling cashiers for a user
+   Params: userId (path) - The user's ID
+   Query: range (optional, default=5) - Number of cashiers to return
+   Response:
+     {
+       "success": true,
+       "data": { "topCashiers": [<cashier>, ...] },
+       "message": "User's top cashiers fetched successfully"
+     }
+
+7. GET /users/revenue/:userId
+   Description: Get user revenue for charting (week/month/year)
+   Params: userId (path) - The user's ID
+   Query: period (optional) - "week", "month", or "year" (default: "week")
+   Response:
+     {
+       "success": true,
+       "data": {
+         "data": [
+           { "label": "Mon", "value": 65 },
+           { "label": "Tue", "value": 45 },
+           ...
+         ]
+       },
+       "message": "User revenue fetched successfully"
+     }
+
+   Note: For week: labels are Mon-Sun
+         For month: labels are 1-30
+         For year: labels are Jan-Dec
+
+8. GET /users/total-orders/:userId
+   Description: Get total number of sold orders for a user
+   Params: userId (path) - The user's ID
+   Query: None
+   Response:
+     {
+       "success": true,
+       "data": { "totalOrders": <number> },
+       "message": "Total orders fetched successfully"
+     }
+
+9. GET /users/recent-orders/:userId
+   Description: Get recent orders for a user
+   Params: userId (path) - The user's ID
+   Query: limit (optional, default=10) - Number of orders to return
+   Response:
+     {
+       "success": true,
+       "data": {
+         "recentOrders": [
+           {
+             "id": "<order_id>",
+             "total": 150,
+             "type": "sold",
+             "products": [...],
+             "createdAt": {...}
+           },
+           ...
+         ]
+       },
+       "message": "Recent orders fetched successfully"
+     }
+
+10. GET /users/revenue-growth/:userId
+   Description: Get revenue growth percentage compared to previous period
+   Params: userId (path) - The user's ID
+   Query: period (optional) - "week", "month", or "year" (default: "week")
+   Response:
+     {
+       "success": true,
+       "data": {
+         "growth": {
+           "currentPeriodTotal": 1500,
+           "previousPeriodTotal": 1200,
+           "growth": 25.0
+         }
+       },
+       "message": "Revenue growth fetched successfully"
+     }
+
+   Note: growth is percentage (positive = increase, negative = decrease)
+
+11. GET /users/total-orders-period/:userId
+   Description: Get total number of sold orders for this week/month/year
+   Params: userId (path) - The user's ID
+   Query: period (optional) - "week", "month", or "year" (default: "week")
+   Response:
+     {
+       "success": true,
+       "data": { "totalOrders": <number> },
+       "message": "Total orders for period fetched successfully"
+     }
+
+12. GET /users/total-revenue-period/:userId
+   Description: Get total revenue for this week/month/year
+   Params: userId (path) - The user's ID
+   Query: period (optional) - "week", "month", or "year" (default: "week")
+   Response:
+     {
+       "success": true,
+       "data": { "totalRevenue": <number> },
+       "message": "Total revenue for period fetched successfully"
+     }
+
+================================================================================
+                           OTHER ENDPOINTS
+================================================================================
+
+GET /health
+   Description: Health check endpoint
+   Params: None
+   Query: None
+   Response:
+     { "status": "ok" }
+
+================================================================================
+                       FRONTEND CALL EXAMPLES
+================================================================================
+
+// Get Firebase ID Token
+const token = await user.getIdToken();
+
+// Common fetch wrapper
+async function callApi(endpoint, token, params = {}) {
+  const queryString = new URLSearchParams(params).toString();
+  const url = `http://localhost:3000/api${endpoint}${queryString ? '?' + queryString : ''}`;
+
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  });
+  return response.json();
+}
+
+// Example: Get user sold total
+const result = await callApi('/users/sold-total/user123', token);
+// Result: { success: true, data: { totalSold: 1500 }, message: "..." }
+
+// Example: Get most sold products with custom range
+const result = await callApi('/users/most-sold-products/user123', token, { range: 10 });
+
+// Example: Get sold total for specific day
+const result = await callApi('/users/sold-total/user123/specific-day', token, { date: '2024-01-15' });
+
+// Example: Get weekly revenue (default)
+const result = await callApi('/users/revenue/user123', token);
+// Result: { success: true, data: { data: [{ label: "Mon", value: 65 }, ...] }, message: "..." }
+
+// Example: Get monthly revenue
+const result = await callApi('/users/revenue/user123', token, { period: 'month' });
+
+// Example: Get yearly revenue
+const result = await callApi('/users/revenue/user123', token, { period: 'year' });
+
+// Example: Get total orders
+const result = await callApi('/users/total-orders/user123', token);
+// Result: { success: true, data: { totalOrders: 42 }, message: "..." }
+
+// Example: Get recent orders with custom limit
+const result = await callApi('/users/recent-orders/user123', token, { limit: 5 });
+
+// Example: Get weekly revenue growth
+const result = await callApi('/users/revenue-growth/user123', token);
+// Result: { success: true, data: { growth: { currentPeriodTotal: 1500, previousPeriodTotal: 1200, growth: 25 } }, message: "..." }
+
+// Example: Get monthly revenue growth
+const result = await callApi('/users/revenue-growth/user123', token, { period: 'month' });
+
+// Example: Get yearly revenue growth
+const result = await callApi('/users/revenue-growth/user123', token, { period: 'year' });
+
+// Example: Get total orders for this week (default)
+const result = await callApi('/users/total-orders-period/user123', token);
+// Result: { success: true, data: { totalOrders: 15 }, message: "..." }
+
+// Example: Get total orders for this month
+const result = await callApi('/users/total-orders-period/user123', token, { period: 'month' });
+
+// Example: Get total revenue for this week (default)
+const result = await callApi('/users/total-revenue-period/user123', token);
+// Result: { success: true, data: { totalRevenue: 2500 }, message: "..." }
+
+// Example: Get total revenue for this year
+const result = await callApi('/users/total-revenue-period/user123', token, { period: 'year' });
+
+================================================================================

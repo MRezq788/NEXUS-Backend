@@ -2,9 +2,15 @@ import express, { Application } from "express";
 import cors from "cors";
 import { extractUserEmail } from "./modules/warehouseProducts/warehouse.product.controller";
 
+
 const app: Application = express();
 
-app.use(cors());
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+  }),
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(extractUserEmail); // extracts email from all requests and adds it to req.userEmail
@@ -27,10 +33,11 @@ import warehouseProductRoutes from "./modules/WarehouseShopProducts/warehousePro
 app.use("/api/users", userRoutes);
 app.use("/api/warehouses", warehouseRoutes);
 app.use("/api/products", productRoutes);
-app.use("/api/warehouse-products", warehouseProductRoutes);
+app.use("/api/warehouse-products", warehouseProductRoutes); // from inventory branch
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/business-inventory", businessInventoryRoutes);
-app.use("/api/warehouse-shop/orders", warehouseShopOrderRoutes);
+app.use("/api/warehouse-shop/orders", warehouseShopOrderRoutes); // from inventory branch
+app.use("/api/orders", orderRoutes); // from main branch
 app.use("/api/pos", posRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/uploads", uploadRoutes);

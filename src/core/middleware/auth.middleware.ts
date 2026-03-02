@@ -1,0 +1,44 @@
+import { getAuth } from "firebase-admin/auth";
+import { Request, Response, NextFunction } from "express";
+
+export interface AuthRequest extends Request {
+  user?: {
+    uid: string;
+    email?: string;
+    role?: string;
+  };
+}
+
+export const verifyToken = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+) => {
+  console.log("Auth middleware hit:", req.method, req.originalUrl);
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader?.startsWith("Bearer ")) {
+    console.log("No token provided");
+    return res.status(401).json({
+      success: false,
+      error: "No token provided",
+    });
+  }
+
+  const idToken = authHeader.split("Bearer ")[1];
+
+  try {
+    const decodedToken = await getAuth().verifyIdToken(idToken);
+    req.user = {
+      uid: decodedToken.uid,
+      email: decodedToken.email,
+    };
+    next();
+  } catch (error) {
+    console.log("Invalid token:", error);
+    return res.status(401).json({
+      success: false,
+      error: "Invalid token",
+    });
+  }
+};

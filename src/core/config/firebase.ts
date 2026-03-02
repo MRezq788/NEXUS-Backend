@@ -1,17 +1,15 @@
-import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
-import dotenv from 'dotenv';
+import "dotenv/config";
+import admin from "firebase-admin";
 
-dotenv.config();
+const serviceAccount = require("./nexus-fc878-firebase-adminsdk-fbsvc-a746b832c2.json");
 
-const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY,
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.FIREBASE_PROJECT_ID,
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.FIREBASE_APP_ID,
-};
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+  });
+}
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+const db = admin.firestore();
+const auth = admin.auth();
+
+export { admin, db, auth };
