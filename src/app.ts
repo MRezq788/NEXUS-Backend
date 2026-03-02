@@ -17,10 +17,12 @@ import posRoutes from './modules/pos/pos.routes';
 import dashboardRoutes from './modules/dashboard/dashboard.routes';
 import uploadRoutes from './modules/uploads/upload.routes';
 import reportRoutes from './modules/reports/report.routes';
+import warehouseProductRoutes from './modules/warehouseProducts/warehouseProduct.routes'
 
 app.use('/api/users', userRoutes);
 app.use('/api/warehouses', warehouseRoutes);
 app.use('/api/products', productRoutes);
+app.use('/api/warehouse-products', warehouseProductRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/business-inventory', businessInventoryRoutes);
 app.use('/api/orders', orderRoutes);
