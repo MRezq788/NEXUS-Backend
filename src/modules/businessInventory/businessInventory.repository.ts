@@ -39,28 +39,32 @@ export const getInventory = async ({
   try {
     const constraints: QueryConstraint[] = [];
 
-    // needs firebase handling
+    // 🔹 Equality filter on status
+    if (typeof inStock === 'boolean') {
+      const requiredStatus = inStock ? "In Stock" : "Out of Stock";
+      constraints.push(where('status', "==", requiredStatus));
+    }
 
-    // if (typeof inStock === 'boolean') {
-    //   const operator = inStock ? "!=" : "==";
-    //   constraints.push(where('quantity', operator, 0));
-    // }
-
-    // if (search) {
-    //   const end = search + '\uf8ff';
-    //   constraints.push(where('name', '>=', search));
-    //   constraints.push(where('name', '<=', end));
-    // }
-
+    // 🔹 Required ordering: first inequality field must be ordered
     constraints.push(orderBy('createdAt', 'desc'));
 
+    // 🔹 Cursor pagination
     if (startAfter) {
       constraints.push(startAfterFn(startAfter));
     }
 
+    // 🔹 Range filter on name (prefix search)
+    if (search) {
+      const end = search + '\uf8ff';
+      constraints.push(where('name', '>=', search));
+      constraints.push(where('name', '<=', end));
+    }
+
+    // 🔹 Limit
     constraints.push(limitFn(limit));
 
-    const q = query(collection(db, COLLECTION_NAME, email, SUBCOLLECTION_NAME), ...constraints);
+    const q = query(collection(db, COLLECTION_NAME, email, SUBCOLLECTION_NAME),...constraints);
+
 
     const snapshot = await getDocs(q);
 
