@@ -31,6 +31,17 @@ export class OrderService {
   }
 
   async updateOrderStatus(userEmail: string, id: string, status: OrderStatus): Promise<Order | null> {
+
+    const order = await orderRepository.findById(userEmail, id);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    // If changing to completed, add products to buyer's list
+    if (status === 'completed' && order.status !== 'completed') {
+      await this.addProductsToBuyerList(userEmail, order);
+    }
+
     return orderRepository.updateStatus(userEmail, id, status);
   }
 
@@ -159,6 +170,70 @@ private async restockProducts(
       await productRepository.update(userEmail, item.productId, {
         quantity: newQuantity,
       });
+    }
+  }
+
+   private async addProductsToBuyerList(
+    sellerEmail: string,
+    order: Order
+  ): Promise<void> {
+    // The buyer's email is stored in order.buyer
+    const buyerEmail = order.buyer;
+    
+    console.log(`Adding products to buyer ${buyerEmail}'s list for order ${order.id}`);
+
+    if (!buyerEmail) {
+      console.error('No buyer email found in order');
+      return;
+    }
+
+    // Verify buyer exists as a user
+    const buyerExists = await orderRepository.verifyUser(buyerEmail);
+    if (!buyerExists) {
+      console.error(`Buyer ${buyerEmail} not found`);
+      throw new Error('Buyer user not found');
+    }
+
+    // For each product in the order, add it to buyer's product list
+    for (const item of order.products) {
+      try {
+        // Get the original product details from seller
+        const originalProduct = await productRepository.findById(sellerEmail, item.productId);
+        
+        if (!originalProduct) {
+          console.error(`Product ${item.productId} not found in seller's inventory`);
+          continue;
+        }
+
+        // Check if buyer already has this product (by name)
+        // We'll search through buyer's products to avoid duplicates
+        const buyerProducts = await productRepository.findAll(buyerEmail, 1, 1000);
+        const existingProduct = buyerProducts.products.find(
+          p => p.name.toLowerCase() === originalProduct.name.toLowerCase()
+        );
+
+        if (existingProduct) {
+          // Update existing product quantity
+          const newQuantity = existingProduct.quantity + item.quantity;
+          await productRepository.update(buyerEmail, existingProduct.id, {
+            quantity: newQuantity,
+          });
+        } else {
+          // Create new product for buyer
+          await productRepository.create(buyerEmail, {
+            name: originalProduct.name,
+            quantity: item.quantity,
+            unit: originalProduct.unit,
+            price: originalProduct.price,
+            description: originalProduct.description,
+            category: originalProduct.category,
+          });
+        }
+        console.log(`Added product ${originalProduct.name} (quantity: ${item.quantity}) to buyer ${buyerEmail}'s list`);
+      } catch (error) {
+        console.error(`Failed to add product ${item.productId} to buyer's list:`, error);
+        // Continue with other products even if one fails
+      }
     }
   }
 }
