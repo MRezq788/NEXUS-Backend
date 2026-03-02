@@ -16,19 +16,22 @@ import productRoutes from './modules/warehouseProducts/warehouse.product.routes'
 import inventoryRoutes from './modules/warehouseInventory/inventory.routes';
 import businessInventoryRoutes from './modules/businessInventory/businessInventory.routes';
 import orderRoutes from './modules/warehouseOrders/warehouse.order.routes';
+import warehouseShopOrderRoutes from './modules/orders/order.routes';
 import posRoutes from './modules/pos/pos.routes';
 import dashboardRoutes from './modules/dashboard/dashboard.routes';
 import uploadRoutes from './modules/uploads/upload.routes';
 import reportRoutes from './modules/reports/report.routes';
+import warehouseProductRoutes from './modules/WarehouseShopProducts/warehouseProduct.routes'
 
 
 // Use routes
 app.use('/api/users', userRoutes);
 app.use('/api/warehouses', warehouseRoutes);
 app.use('/api/products', productRoutes);
+app.use('/api/warehouse-products', warehouseProductRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/business-inventory', businessInventoryRoutes);
-app.use('/api/orders', orderRoutes);
+app.use('/api/warehouse-shop/orders', warehouseShopOrderRoutes);
 app.use('/api/pos', posRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/uploads', uploadRoutes);
