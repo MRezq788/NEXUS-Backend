@@ -1,14 +1,42 @@
-export {};
-const { getFirestore } = require("firebase-admin/firestore");
-const db = getFirestore();
+import { admin } from '../../core/config/firebase';
 
-const getUserData = async (userId: String) => {
+const db = admin.firestore();
+const usersCollection = db.collection('users');
+
+export interface CreateUserData {
+  name: string;
+  email: string;
+  role: string;
+}
+
+export const createUserDocument = async (userData: CreateUserData) => {
+  // RULE: Force the Document ID to be the user's email
+  const docRef = usersCollection.doc(userData.email); 
+
+  const newUser = {
+    name: userData.name,
+    email: userData.email,
+    role: userData.role,
+    // RULE: Strict data initialization
+    profileImageUrl: "",
+    preferences: {},
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    lastLogin: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  // Using .set() creates the document or overwrites it. 
+  await docRef.set(newUser);
+
+  return { id: userData.email, ...newUser };
+};
+
+export const getUserData = async (userId: string) => {
   const userRef = db.collection("users").doc(userId);
   const snapshot = await userRef.get();
   return snapshot.data() || {};
 };
 
-const getUserSoldAmount = async (userId: String) => {
+export const getUserSoldAmount = async (userId: string) => {
   try {
     const ordersRef = db
       .collection("users")
@@ -28,7 +56,8 @@ const getUserSoldAmount = async (userId: String) => {
     return 0;
   }
 };
-const getUserBoughtAmount = async (userId: String) => {
+
+export const getUserBoughtAmount = async (userId: string) => {
   try {
     const ordersRef = db
       .collection("users")
@@ -48,18 +77,20 @@ const getUserBoughtAmount = async (userId: String) => {
     return 0;
   }
 };
-const getOwnerSites = async (userId: String) => {
+
+export const getOwnerSites = async (userId: string) => {
   const sitesRef = db.collection("users").doc(userId);
   const snapshot = await sitesRef.get();
-  return snapshot.data().siteIds || [];
-};
-const userRole = async (userId: String) => {
-  const userRef = db.collection("users").doc(userId);
-  const snapshot = await userRef.get();
-  return snapshot.data().role || "user";
+  return snapshot.data()?.siteIds || [];
 };
 
-const getUserSoldTotalForSpecificDay = async (userId: String, date: Date) => {
+export const userRole = async (userId: string) => {
+  const userRef = db.collection("users").doc(userId);
+  const snapshot = await userRef.get();
+  return snapshot.data()?.role || "user";
+};
+
+export const getUserSoldTotalForSpecificDay = async (userId: string, date: Date) => {
   const startOfDay = new Date(date);
   startOfDay.setHours(0, 0, 0, 0);
   const endOfDay = new Date(date);
@@ -80,7 +111,7 @@ const getUserSoldTotalForSpecificDay = async (userId: String, date: Date) => {
   return snapshot.data().totalAmount;
 };
 
-const getMostSoldItems = async (userId: String, range: number) => {
+export const getMostSoldItems = async (userId: string, range: number) => {
   const ordersRef = db
     .collection("users")
     .doc(userId)
@@ -103,7 +134,8 @@ const getMostSoldItems = async (userId: String, range: number) => {
     .map(([productId]) => productId);
   return sortedProducts;
 };
-const getTopCashiersSelling = async (userId: String, range: number) => {
+
+export const getTopCashiersSelling = async (userId: string, range: number) => {
   const ordersRef = db
     .collection("users")
     .doc(userId)
@@ -126,7 +158,7 @@ const getTopCashiersSelling = async (userId: String, range: number) => {
   return sortedCashiers;
 };
 
-const getUserRevenue = async (userId: String, period: String) => {
+export const getUserRevenue = async (userId: string, period: string) => {
   const ordersRef = db
     .collection("users")
     .doc(userId)
@@ -158,18 +190,8 @@ const getUserRevenue = async (userId: String, period: String) => {
       return date.getUTCDate().toString();
     } else {
       const months = [
-        "Jan",
-        "Feb",
-        "Mar",
-        "Apr",
-        "May",
-        "Jun",
-        "Jul",
-        "Aug",
-        "Sep",
-        "Oct",
-        "Nov",
-        "Dec",
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
       ];
       return months[date.getUTCMonth()];
     }
@@ -195,18 +217,8 @@ const getUserRevenue = async (userId: String, period: String) => {
     labels = Array.from({ length: 30 }, (_, i) => (i + 1).toString());
   } else {
     labels = [
-      "Jan",
-      "Feb",
-      "Mar",
-      "Apr",
-      "May",
-      "Jun",
-      "Jul",
-      "Aug",
-      "Sep",
-      "Oct",
-      "Nov",
-      "Dec",
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
   }
 
@@ -218,7 +230,7 @@ const getUserRevenue = async (userId: String, period: String) => {
   return result;
 };
 
-const getTotalOrders = async (userId: String) => {
+export const getTotalOrders = async (userId: string) => {
   const ordersRef = db
     .collection("users")
     .doc(userId)
@@ -228,7 +240,7 @@ const getTotalOrders = async (userId: String) => {
   return snapshot.size;
 };
 
-const getRecentOrders = async (userId: String, limit: number) => {
+export const getRecentOrders = async (userId: string, limit: number) => {
   const ordersRef = db
     .collection("users")
     .doc(userId)
@@ -246,7 +258,7 @@ const getRecentOrders = async (userId: String, limit: number) => {
   return orders;
 };
 
-const getRevenueGrowth = async (userId: String, period: String) => {
+export const getRevenueGrowth = async (userId: string, period: string) => {
   const ordersRef = db
     .collection("users")
     .doc(userId)
@@ -306,7 +318,7 @@ const getRevenueGrowth = async (userId: String, period: String) => {
   };
 };
 
-const getTotalOrdersForPeriod = async (userId: String, period: String) => {
+export const getTotalOrdersForPeriod = async (userId: string, period: string) => {
   const ordersRef = db
     .collection("users")
     .doc(userId)
@@ -340,7 +352,7 @@ const getTotalOrdersForPeriod = async (userId: String, period: String) => {
   return count;
 };
 
-const getTotalRevenueForPeriod = async (userId: String, period: String) => {
+export const getTotalRevenueForPeriod = async (userId: string, period: string) => {
   const ordersRef = db
     .collection("users")
     .doc(userId)
@@ -383,21 +395,4 @@ const getTotalRevenueForPeriod = async (userId: String, period: String) => {
 
   console.log("Total revenue:", total);
   return total;
-};
-
-module.exports = {
-  getUserSoldAmount,
-  getUserBoughtAmount,
-  getOwnerSites,
-  userRole,
-  getUserSoldTotalForSpecificDay,
-  getMostSoldItems,
-  getTopCashiersSelling,
-  getUserRevenue,
-  getUserData,
-  getTotalOrders,
-  getRecentOrders,
-  getRevenueGrowth,
-  getTotalOrdersForPeriod,
-  getTotalRevenueForPeriod,
 };

@@ -12,6 +12,7 @@ import {
   getRevenueGrowthController,
   getTotalOrdersForPeriodController,
   getTotalRevenueForPeriodController,
+  syncUser
 } from "./user.controller";
 import { verifyToken } from "../../core/middleware/auth.middleware";
 
@@ -49,5 +50,9 @@ router.get(
   verifyToken,
   getTotalRevenueForPeriodController
 );
+
+// POST /api/users/sync
+// Frontend calls this right after Firebase Client SDK signup
+router.post('/sync', verifyToken, syncUser);
 
 export default router;
