@@ -12,7 +12,10 @@ import {
   getRevenueGrowthController,
   getTotalOrdersForPeriodController,
   getTotalRevenueForPeriodController,
-  syncUser
+  syncUser,
+  createCashierController,
+  getUserProfileController,
+  getCashiersController
 } from "./user.controller";
 import { verifyToken } from "../../core/middleware/auth.middleware";
 
@@ -54,5 +57,17 @@ router.get(
 // POST /api/users/sync
 // Frontend calls this right after Firebase Client SDK signup
 router.post('/sync', verifyToken, syncUser);
+
+// POST /api/users/cashiers
+// Business owners can create cashier accounts
+router.post('/cashiers', verifyToken, createCashierController);
+
+// GET /api/users/cashiers
+// Business owners can view all cashiers they created
+router.get('/cashiers', verifyToken, getCashiersController);
+
+// GET /api/users/profile
+// Get current authenticated user's profile
+router.get('/profile', verifyToken, getUserProfileController);
 
 export default router;

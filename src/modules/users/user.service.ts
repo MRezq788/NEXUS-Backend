@@ -15,7 +15,10 @@ import {
   getTotalOrdersForPeriod,
   getTotalRevenueForPeriod,
   createUserDocument,
-  CreateUserData
+  CreateUserData,
+  createCashierAccount,
+  CreateCashierData,
+  getCashiersByBusinessOwner
 } from "./user.repository";
 
 export async function getUserSoldTotal(userId: string) {
@@ -105,3 +108,54 @@ export const syncNewUser = async (data: CreateUserData) => {
   
   return createdUser;
 };
+
+export const createCashierService = async (data: CreateCashierData) => {
+  // Business Logic: Validate input
+  if (!data.name || !data.email || !data.password || !data.businessOwnerId) {
+    throw new Error("Business Logic Error: Missing required fields.");
+  }
+
+  if (data.password.length < 6) {
+    throw new Error("Business Logic Error: Password must be at least 6 characters.");
+  }
+
+  // Email validation
+  const emailRegex = /^\S+@\S+\.\S+$/;
+  if (!emailRegex.test(data.email)) {
+    throw new Error("Business Logic Error: Invalid email format.");
+  }
+
+  // Verify the businessOwnerId exists and is a business owner
+  const businessOwner = await getUserData(data.businessOwnerId);
+  if (!businessOwner || !businessOwner.email) {
+    throw new Error("Business Logic Error: Invalid business owner ID.");
+  }
+
+  if (businessOwner.role !== "business_owner") {
+    throw new Error("Business Logic Error: Only business owners can create cashier accounts.");
+  }
+
+  // Create the cashier account
+  const createdCashier = await createCashierAccount(data);
+
+  return createdCashier;
+};
+
+export const getCashiersService = async (businessOwnerId: string) => {
+  // Verify the business owner exists
+  const businessOwner = await getUserData(businessOwnerId);
+  if (!businessOwner || !businessOwner.email) {
+    throw new Error("Business Logic Error: Invalid business owner ID.");
+  }
+
+  if (businessOwner.role !== "business_owner") {
+    throw new Error("Business Logic Error: User is not a business owner.");
+  }
+
+  // Get all cashiers for this business owner
+  const cashiers = await getCashiersByBusinessOwner(businessOwnerId);
+
+  return cashiers;
+};
+
+

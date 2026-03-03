@@ -14,7 +14,9 @@ import {
   getRevenueGrowthService,
   getTotalOrdersForPeriodService,
   getTotalRevenueForPeriodService,
-  syncNewUser 
+  syncNewUser,
+  createCashierService,
+  getCashiersService
 } from './user.service';
 
 export const getUserSoldTotalController = async (req: Request, res: Response) => {
@@ -227,3 +229,133 @@ export const syncUser = async (req: Request | any, res: Response): Promise<void>
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
+
+export const createCashierController = async (req: Request | any, res: Response): Promise<void> => {
+  try {
+    const { name, email, password } = req.body;
+
+    // 1. Basic HTTP Input Validation
+    if (!name || !email || !password) {
+      res.status(400).json({
+        success: false,
+        message: "Missing required fields: name, email, or password."
+      });
+      return;
+    }
+
+    // 2. Get the business owner ID from the authenticated user
+    const businessOwnerId = req.user?.email;
+    if (!businessOwnerId) {
+      res.status(401).json({
+        success: false,
+        message: "Unauthorized: No authenticated user found."
+      });
+      return;
+    }
+
+    // 3. Call the Service (Business Logic)
+    const result = await createCashierService({
+      name,
+      email,
+      password,
+      businessOwnerId
+    });
+
+    // 4. Return HTTP Response
+    res.status(201).json({
+      success: true,
+      message: "Cashier account created successfully",
+      data: result
+    });
+
+  } catch (error: any) {
+    console.error("Error in createCashier controller:", error);
+
+    // Catch business logic errors from the service
+    if (error.message.includes('Business Logic Error')) {
+      res.status(400).json({ success: false, message: error.message });
+      return;
+    }
+
+    // Handle Firebase Auth errors
+    if (error.code === 'auth/email-already-exists') {
+      res.status(400).json({ success: false, message: "Email already exists." });
+      return;
+    }
+
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const getUserProfileController = async (req: Request | any, res: Response): Promise<void> => {
+  try {
+    const userEmail = req.user?.email;
+
+    if (!userEmail) {
+      res.status(401).json({
+        success: false,
+        message: "Unauthorized: No authenticated user found."
+      });
+      return;
+    }
+
+    // Import getUserData from service
+    const { getUserData } = await import('./user.repository');
+    const userData = await getUserData(userEmail);
+
+    if (!userData || !userData.email) {
+      res.status(404).json({
+        success: false,
+        message: "User profile not found."
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "User profile fetched successfully",
+      data: userData
+    });
+
+  } catch (error: any) {
+    console.error("Error in getUserProfile controller:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const getCashiersController = async (req: Request | any, res: Response): Promise<void> => {
+  try {
+    const businessOwnerId = req.user?.email;
+
+    if (!businessOwnerId) {
+      res.status(401).json({
+        success: false,
+        message: "Unauthorized: No authenticated user found."
+      });
+      return;
+    }
+
+    // Call the Service
+    const cashiers = await getCashiersService(businessOwnerId);
+
+    res.status(200).json({
+      success: true,
+      message: "Cashiers fetched successfully",
+      data: { cashiers }
+    });
+
+  } catch (error: any) {
+    console.error("Error in getCashiers controller:", error);
+
+    // Catch business logic errors from the service
+    if (error.message.includes('Business Logic Error')) {
+      res.status(400).json({ success: false, message: error.message });
+      return;
+    }
+
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+
+
