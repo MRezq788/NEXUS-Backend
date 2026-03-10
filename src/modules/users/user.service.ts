@@ -15,7 +15,8 @@ import {
   getTotalOrdersForPeriod,
   getTotalRevenueForPeriod,
   createUserDocument,
-  CreateUserData
+  CreateUserData,
+  getUserProfileByEmail,
 } from "./user.repository";
 
 export async function getUserSoldTotal(userId: string) {
@@ -34,7 +35,10 @@ export async function getUserRole(userId: string) {
   return await userRole(userId);
 }
 
-export async function getUserSoldTotalForSpecificDayService(userId: string, date: Date) {
+export async function getUserSoldTotalForSpecificDayService(
+  userId: string,
+  date: Date,
+) {
   return await getUserSoldTotalForSpecificDay(userId, date);
 }
 
@@ -84,24 +88,34 @@ export async function getRevenueGrowthService(userId: string, period: string) {
   return await getRevenueGrowth(userId, period);
 }
 
-export async function getTotalOrdersForPeriodService(userId: string, period: string) {
+export async function getTotalOrdersForPeriodService(
+  userId: string,
+  period: string,
+) {
   return await getTotalOrdersForPeriod(userId, period);
 }
 
-export async function getTotalRevenueForPeriodService(userId: string, period: string) {
+export async function getTotalRevenueForPeriodService(
+  userId: string,
+  period: string,
+) {
   return await getTotalRevenueForPeriod(userId, period);
+}
+
+export async function getCurrentUserProfileService(email: string) {
+  return await getUserProfileByEmail(email);
 }
 
 export const syncNewUser = async (data: CreateUserData) => {
   // Business Logic: Ensure the role is one of the allowed types
   const validRoles = ["business_owner", "warehouse", "app_User"];
-  
+
   if (!validRoles.includes(data.role)) {
     throw new Error(`Business Logic Error: Invalid role '${data.role}'.`);
   }
 
   // Delegate the actual database creation to the repository
   const createdUser = await createUserDocument(data);
-  
+
   return createdUser;
 };

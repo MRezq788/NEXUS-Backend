@@ -5,7 +5,6 @@ import {
   getDoc,
   addDoc,
   updateDoc,
-  deleteDoc,
   query,
   where,
   orderBy,
@@ -15,7 +14,7 @@ import {
   DocumentData,
 } from 'firebase/firestore';
 import { db } from '../../core/config/clientFirebase';
-import { Product, ProductStatus, computeStatus, formatDate } from './warehouse.product.model';
+import { Product, ProductVariant, ProductStatus, computeStatus, formatDate } from './warehouse.product.model';
 
 // Get user's products subcollection reference
 function getUserProductsCollection(userEmail: string) {
@@ -97,10 +96,17 @@ export class ProductRepository {
 
     const productDoc = doc(getUserProductsCollection(userEmail), id);
     const snapshot = await getDoc(productDoc);
-    
+
     if (!snapshot.exists()) return null;
-    
-    return this.formatProduct(snapshot);
+
+    const variantsRef = collection(productDoc, 'variants');
+    const variantsSnap = await getDocs(variantsRef);
+    const variants: ProductVariant[] = variantsSnap.docs.map((vDoc) => ({
+      id: vDoc.id,
+      ...(vDoc.data() as Omit<ProductVariant, 'id'>),
+    }));
+
+    return this.formatProduct(snapshot, variants);
   }
 
   // Create new product
@@ -143,7 +149,7 @@ export class ProductRepository {
 
     const productDoc = doc(getUserProductsCollection(userEmail), id);
     const existing = await getDoc(productDoc);
-    
+
     if (!existing.exists()) return null;
 
     const now = new Date();
@@ -152,20 +158,62 @@ export class ProductRepository {
       lastUpdated: now.toISOString(),
     };
 
-    if (productData.name !== undefined) updates.name = productData.name;
+    if (productData.name       !== undefined) updates.name        = productData.name;
+    if (productData.description !== undefined) updates.description = productData.description;
+    if (productData.category   !== undefined) updates.category    = productData.category;
+    if (productData.unit       !== undefined) updates.unit        = productData.unit;
+    if (productData.images     !== undefined) updates.images      = productData.images;
+    if (productData.attributes !== undefined) updates.attributes  = productData.attributes;
+    if (productData.active     !== undefined) updates.active      = productData.active;
+    if (productData.basePrice  !== undefined) {
+      updates.basePrice = productData.basePrice;
+      updates.price     = productData.basePrice;
+    }
+    if (productData.price !== undefined && productData.basePrice === undefined) {
+      updates.price = productData.price;
+    }
     if (productData.quantity !== undefined) {
       updates.quantity = productData.quantity;
-      updates.status = computeStatus(productData.quantity);
+      updates.status   = computeStatus(productData.quantity);
     }
-    if (productData.unit !== undefined) updates.unit = productData.unit;
-    if (productData.price !== undefined) updates.price = productData.price;
-    if (productData.description !== undefined) updates.description = productData.description;
-    if (productData.category !== undefined) updates.category = productData.category;
 
-    await updateDoc(productDoc, updates);
+    const batch = writeBatch(db);
+    batch.update(productDoc, updates);
 
+    // Replace variants subcollection if provided
+    if (Array.isArray(productData.variants)) {
+      // Delete existing variants first
+      const variantsRef = collection(productDoc, 'variants');
+      const existingVariants = await getDocs(variantsRef);
+      existingVariants.forEach((vDoc) => batch.delete(vDoc.ref));
+
+      // Write new variants
+      for (const variant of productData.variants) {
+        const rawId = Object.values(variant.attributes)
+          .join('_')
+          .toLowerCase()
+          .replace(/\s+/g, '_');
+        const variantId = rawId || 'default';
+        const variantRef = doc(variantsRef, variantId);
+        batch.set(variantRef, {
+          attributes: variant.attributes,
+          price:      variant.price,
+          quantity:   variant.quantity,
+        });
+      }
+    }
+
+    await batch.commit();
+
+    // Re-fetch with variants
     const updated = await getDoc(productDoc);
-    return this.formatProduct(updated);
+    const variantsSnap = await getDocs(collection(productDoc, 'variants'));
+    const variants: ProductVariant[] = variantsSnap.docs.map((vDoc) => ({
+      id: vDoc.id,
+      ...(vDoc.data() as Omit<ProductVariant, 'id'>),
+    }));
+
+    return this.formatProduct(updated, variants);
   }
 
   // Delete single product
@@ -175,7 +223,15 @@ export class ProductRepository {
 
     try {
       const productDoc = doc(getUserProductsCollection(userEmail), id);
-      await deleteDoc(productDoc);
+
+      // Delete variants subcollection first
+      const variantsRef = collection(productDoc, 'variants');
+      const variantsSnap = await getDocs(variantsRef);
+      const batch = writeBatch(db);
+      variantsSnap.forEach((vDoc) => batch.delete(vDoc.ref));
+      batch.delete(productDoc);
+      await batch.commit();
+
       return true;
     } catch (error) {
       return false;
@@ -192,6 +248,12 @@ export class ProductRepository {
 
     for (const id of ids) {
       const productDoc = doc(getUserProductsCollection(userEmail), id);
+
+      // Delete variants subcollection docs
+      const variantsRef = collection(productDoc, 'variants');
+      const variantsSnap = await getDocs(variantsRef);
+      variantsSnap.forEach((vDoc) => batch.delete(vDoc.ref));
+
       batch.delete(productDoc);
       count++;
     }
@@ -222,21 +284,37 @@ export class ProductRepository {
     return { total, inStock, outOfStock };
   }
 
+  // Safely convert a Firestore Timestamp, Date, ISO string, or null to a Date
+  private toDate(value: any): Date | null {
+    if (!value) return null;
+    if (typeof value.toDate === 'function') return value.toDate(); // Firestore Timestamp
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
   // Format Firestore document to Product
-  private formatProduct(doc: DocumentSnapshot<DocumentData>): Product {
+  private formatProduct(doc: DocumentSnapshot<DocumentData>, variants?: ProductVariant[]): Product {
     const data = doc.data()!;
+    const createdDate     = this.toDate(data.createdAt);
+    const updatedDate     = this.toDate(data.updatedAt);
+    const lastUpdatedDate = this.toDate(data.lastUpdated);
     return {
       id: doc.id,
       name: data.name,
-      quantity: data.quantity,
-      unit: data.unit,
-      price: data.price,
-      description: data.description,
-      status: data.status,
-      category: data.category,
-      lastUpdated: formatDate(new Date(data.lastUpdated)),
-      createdAt: formatDate(new Date(data.createdAt)),
-      updatedAt: formatDate(new Date(data.updatedAt)),
+      quantity: data.quantity ?? 0,
+      unit: data.unit ?? '',
+      price: data.price ?? data.basePrice ?? 0,
+      basePrice: data.basePrice ?? data.price ?? 0,
+      description: data.description ?? '',
+      status: data.status ?? computeStatus(data.quantity ?? 0),
+      category: data.category ?? '',
+      images: data.images ?? [],
+      attributes: data.attributes ?? [],
+      active: data.active ?? true,
+      variants: variants ?? [],
+      lastUpdated: lastUpdatedDate ? formatDate(lastUpdatedDate) : '',
+      createdAt:   createdDate     ? formatDate(createdDate)     : '',
+      updatedAt:   updatedDate     ? formatDate(updatedDate)     : '',
     };
   }
 }

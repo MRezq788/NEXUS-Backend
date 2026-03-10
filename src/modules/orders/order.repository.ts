@@ -1,14 +1,9 @@
-import {
-  collection,
-  doc,
-  writeBatch,
-  Timestamp,
-} from 'firebase/firestore';
+import { collection, doc, writeBatch, Timestamp } from "firebase/firestore";
 
-import { db } from '../../core/config/clientFirebase';
+import { db } from "../../core/config/clientFirebase";
 
-const USERS_COLLECTION = 'users';
-const ORDERS_SUBCOLLECTION = 'orders';
+const USERS_COLLECTION = "users";
+const ORDERS_SUBCOLLECTION = "orders";
 
 interface IncomingOrder {
   buyerEmail: string;
@@ -16,6 +11,13 @@ interface IncomingOrder {
   products: {
     productId: string;
     quantity: number;
+    price?: number;
+    variantId?: string;
+    variantAttributes?: Record<string, string>;
+    productName?: string;
+    productImage?: string;
+    unit?: string;
+    lineTotal?: number;
   }[];
   total: number;
 }
@@ -31,7 +33,7 @@ export const createOrdersRepo = async (orders: IncomingOrder[]) => {
       db,
       USERS_COLLECTION,
       buyerEmail,
-      ORDERS_SUBCOLLECTION
+      ORDERS_SUBCOLLECTION,
     );
 
     const orderDocRef = doc(buyerOrdersCollectionRef); // auto ID
@@ -43,7 +45,7 @@ export const createOrdersRepo = async (orders: IncomingOrder[]) => {
       USERS_COLLECTION,
       buyerEmail,
       ORDERS_SUBCOLLECTION,
-      orderId
+      orderId,
     );
 
     const sellerOrderRef = doc(
@@ -51,29 +53,34 @@ export const createOrdersRepo = async (orders: IncomingOrder[]) => {
       USERS_COLLECTION,
       sellerEmail,
       ORDERS_SUBCOLLECTION,
-      orderId
+      orderId,
     );
 
     const now = Timestamp.now();
 
     // 🔹 Seller Order Object (Warehouse)
     const sellerOrder = {
-      status: 'pending',
+      status: "pending",
+      ownerProductAccess: false,
+      ownerProductAccessAt: null,
       createdAt: now,
       updatedAt: now,
       total,
       buyer: buyerEmail,
       products,
-      type: 'sold',
+      type: "sold",
     };
 
     // 🔹 Buyer Order Object (Owner)
     const buyerOrder = {
+      status: "pending",
+      ownerProductAccess: false,
+      ownerProductAccessAt: null,
       createdAt: now,
       updatedAt: now,
-      executorType: 'warehouse',
+      executorType: "warehouse",
       executorId: sellerEmail,
-      type: 'bought',
+      type: "bought",
       products,
       total,
     };
@@ -88,9 +95,8 @@ export const createOrdersRepo = async (orders: IncomingOrder[]) => {
 };
 
 export const createSingleOrderRepo = async (
-  order: IncomingOrder
+  order: IncomingOrder,
 ): Promise<string> => {
-
   const { buyerEmail, sellerEmail, products, total } = order;
 
   const batch = writeBatch(db);
@@ -100,7 +106,7 @@ export const createSingleOrderRepo = async (
     db,
     USERS_COLLECTION,
     buyerEmail,
-    ORDERS_SUBCOLLECTION
+    ORDERS_SUBCOLLECTION,
   );
 
   const generatedDocRef = doc(buyerOrdersCollectionRef);
@@ -111,7 +117,7 @@ export const createSingleOrderRepo = async (
     USERS_COLLECTION,
     buyerEmail,
     ORDERS_SUBCOLLECTION,
-    orderId
+    orderId,
   );
 
   const sellerOrderRef = doc(
@@ -119,29 +125,34 @@ export const createSingleOrderRepo = async (
     USERS_COLLECTION,
     sellerEmail,
     ORDERS_SUBCOLLECTION,
-    orderId
+    orderId,
   );
 
   const now = Timestamp.now();
 
   // 🔹 Seller Order (Warehouse)
   const sellerOrder = {
-    status: 'pending',
+    status: "pending",
+    ownerProductAccess: false,
+    ownerProductAccessAt: null,
     createdAt: now,
     updatedAt: now,
     total,
     buyer: buyerEmail,
     products,
-    type: 'sold',
+    type: "sold",
   };
 
   // 🔹 Buyer Order (Owner)
   const buyerOrder = {
+    status: "pending",
+    ownerProductAccess: false,
+    ownerProductAccessAt: null,
     createdAt: now,
     updatedAt: now,
-    executorType: 'warehouse',
+    executorType: "warehouse",
     executorId: sellerEmail,
-    type: 'bought',
+    type: "bought",
     products,
     total,
   };

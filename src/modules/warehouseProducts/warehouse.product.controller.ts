@@ -88,15 +88,23 @@ export class ProductController {
     try {
       const userEmail = this.getUserEmail(req);
       const id = req.params.id as string;
-      const { name, quantity, unit, price, description, category } = req.body;
+      const {
+        name, quantity, unit, price, basePrice,
+        description, category, images, attributes, variants, active,
+      } = req.body;
 
       const product = await productService.updateProduct(userEmail, id, {
         name,
         quantity,
         unit,
         price,
+        basePrice,
         description,
         category,
+        images,
+        attributes,
+        variants,
+        active,
       });
 
       if (!product) {

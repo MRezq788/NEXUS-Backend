@@ -1,4 +1,4 @@
-import { createOrdersRepo, createSingleOrderRepo } from './order.repository';
+import { createOrdersRepo, createSingleOrderRepo } from "./order.repository";
 
 interface IncomingOrder {
   buyerEmail: string;
@@ -6,13 +6,18 @@ interface IncomingOrder {
   products: {
     productId: string;
     quantity: number;
+    price?: number;
+    variantId?: string;
+    variantAttributes?: Record<string, string>;
+    productName?: string;
+    productImage?: string;
+    unit?: string;
+    lineTotal?: number;
   }[];
   total: number;
 }
 
-export const createOrdersService = async (
-  orders: IncomingOrder[]
-) => {
+export const createOrdersService = async (orders: IncomingOrder[]) => {
   // 🔹 Basic validation layer
   for (const order of orders) {
     if (
@@ -20,9 +25,9 @@ export const createOrdersService = async (
       !order.sellerEmail ||
       !Array.isArray(order.products) ||
       order.products.length === 0 ||
-      typeof order.total !== 'number'
+      typeof order.total !== "number"
     ) {
-      throw new Error('Invalid order format');
+      throw new Error("Invalid order format");
     }
   }
 
@@ -30,9 +35,7 @@ export const createOrdersService = async (
   await createOrdersRepo(orders);
 };
 
-export const createSingleOrderService = async (
-  order: IncomingOrder
-) => {
+export const createSingleOrderService = async (order: IncomingOrder) => {
   const { buyerEmail, sellerEmail, products, total } = order;
 
   // 🔹 Basic validation
@@ -41,9 +44,9 @@ export const createSingleOrderService = async (
     !sellerEmail ||
     !Array.isArray(products) ||
     products.length === 0 ||
-    typeof total !== 'number'
+    typeof total !== "number"
   ) {
-    throw new Error('Invalid order format');
+    throw new Error("Invalid order format");
   }
 
   // 🔥 Call repository

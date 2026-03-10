@@ -1,7 +1,7 @@
-import { admin } from '../../core/config/firebase';
-import { AggregateField } from 'firebase-admin/firestore';
+import { admin } from "../../core/config/firebase";
+import { AggregateField } from "firebase-admin/firestore";
 const db = admin.firestore();
-const usersCollection = db.collection('users');
+const usersCollection = db.collection("users");
 
 export interface CreateUserData {
   name: string;
@@ -9,9 +9,16 @@ export interface CreateUserData {
   role: string;
 }
 
+export interface UserProfileData {
+  name?: string;
+  email: string;
+  role?: string;
+  profileImageUrl?: string;
+}
+
 export const createUserDocument = async (userData: CreateUserData) => {
   // RULE: Force the Document ID to be the user's email
-  const docRef = usersCollection.doc(userData.email); 
+  const docRef = usersCollection.doc(userData.email);
 
   const newUser = {
     name: userData.name,
@@ -24,7 +31,7 @@ export const createUserDocument = async (userData: CreateUserData) => {
     lastLogin: admin.firestore.FieldValue.serverTimestamp(),
   };
 
-  // Using .set() creates the document or overwrites it. 
+  // Using .set() creates the document or overwrites it.
   await docRef.set(newUser);
 
   return { id: userData.email, ...newUser };
@@ -34,6 +41,25 @@ export const getUserData = async (userId: string) => {
   const userRef = db.collection("users").doc(userId);
   const snapshot = await userRef.get();
   return snapshot.data() || {};
+};
+
+export const getUserProfileByEmail = async (
+  email: string,
+): Promise<UserProfileData | null> => {
+  const userRef = db.collection("users").doc(email);
+  const snapshot = await userRef.get();
+
+  if (!snapshot.exists) {
+    return null;
+  }
+
+  const data = snapshot.data() || {};
+  return {
+    email,
+    name: data.name,
+    role: data.role,
+    profileImageUrl: data.profileImageUrl,
+  };
 };
 
 export const getUserSoldAmount = async (userId: string) => {
@@ -90,7 +116,10 @@ export const userRole = async (userId: string) => {
   return snapshot.data()?.role || "user";
 };
 
-export const getUserSoldTotalForSpecificDay = async (userId: string, date: Date) => {
+export const getUserSoldTotalForSpecificDay = async (
+  userId: string,
+  date: Date,
+) => {
   const startOfDay = new Date(date);
   startOfDay.setHours(0, 0, 0, 0);
   const endOfDay = new Date(date);
@@ -104,9 +133,11 @@ export const getUserSoldTotalForSpecificDay = async (userId: string, date: Date)
     .where("createdAt", ">=", startOfDay)
     .where("createdAt", "<=", endOfDay);
 
-  const snapshot = await ordersRef.aggregate({
-    totalAmount: AggregateField.sum("total"),
-  }).get(); 
+  const snapshot = await ordersRef
+    .aggregate({
+      totalAmount: AggregateField.sum("total"),
+    })
+    .get();
 
   return snapshot.data().totalAmount;
 };
@@ -190,8 +221,18 @@ export const getUserRevenue = async (userId: string, period: string) => {
       return date.getUTCDate().toString();
     } else {
       const months = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec",
       ];
       return months[date.getUTCMonth()];
     }
@@ -217,8 +258,18 @@ export const getUserRevenue = async (userId: string, period: string) => {
     labels = Array.from({ length: 30 }, (_, i) => (i + 1).toString());
   } else {
     labels = [
-      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
     ];
   }
 
@@ -318,11 +369,11 @@ export const getRevenueGrowth = async (userId: string, period: string) => {
   };
 };
 
-export const getTotalOrdersForPeriod = async (userId: string, period: string) => {
-  const ordersRef = db
-    .collection("users")
-    .doc(userId)
-    .collection("orders");
+export const getTotalOrdersForPeriod = async (
+  userId: string,
+  period: string,
+) => {
+  const ordersRef = db.collection("users").doc(userId).collection("orders");
   const snapshot = await ordersRef.get();
 
   const now = new Date();
@@ -352,7 +403,10 @@ export const getTotalOrdersForPeriod = async (userId: string, period: string) =>
   return count;
 };
 
-export const getTotalRevenueForPeriod = async (userId: string, period: string) => {
+export const getTotalRevenueForPeriod = async (
+  userId: string,
+  period: string,
+) => {
   const ordersRef = db
     .collection("users")
     .doc(userId)
