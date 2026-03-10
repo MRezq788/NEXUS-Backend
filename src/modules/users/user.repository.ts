@@ -15,6 +15,12 @@ export interface UserProfileData {
   role?: string;
   profileImageUrl?: string;
 }
+export interface CreateCashierData {
+  name: string;
+  email: string;
+  password: string;
+  businessOwnerId: string;
+}
 
 export const createUserDocument = async (userData: CreateUserData) => {
   // RULE: Force the Document ID to be the user's email
@@ -35,6 +41,36 @@ export const createUserDocument = async (userData: CreateUserData) => {
   await docRef.set(newUser);
 
   return { id: userData.email, ...newUser };
+};
+
+export const createCashierAccount = async (cashierData: CreateCashierData) => {
+  // 1. Create user in Firebase Auth
+  const userRecord = await admin.auth().createUser({
+    email: cashierData.email,
+    password: cashierData.password,
+    displayName: cashierData.name,
+  });
+
+  // 2. Create user document in Firestore
+  const docRef = usersCollection.doc(cashierData.email);
+  const newCashier = {
+    name: cashierData.name,
+    email: cashierData.email,
+    role: "cashier",
+    businessOwnerId: cashierData.businessOwnerId,
+    profileImageUrl: "",
+    preferences: {},
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    lastLogin: null,
+  };
+
+  await docRef.set(newCashier);
+
+  return {
+    uid: userRecord.uid,
+    email: cashierData.email,
+    name: cashierData.name,
+  };
 };
 
 export const getUserData = async (userId: string) => {
@@ -60,6 +96,26 @@ export const getUserProfileByEmail = async (
     role: data.role,
     profileImageUrl: data.profileImageUrl,
   };
+};
+export const getCashiersByBusinessOwner = async (businessOwnerId: string) => {
+  try {
+    const usersRef = db.collection("users");
+    const snapshot = await usersRef
+      .where("businessOwnerId", "==", businessOwnerId)
+      .where("role", "==", "cashier")
+      .get();
+
+    const cashiers = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      email: doc.id,
+      ...doc.data(),
+    }));
+
+    return cashiers;
+  } catch (error) {
+    console.error("Error fetching cashiers:", error);
+    return [];
+  }
 };
 
 export const getUserSoldAmount = async (userId: string) => {

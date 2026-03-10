@@ -176,6 +176,42 @@ All endpoints (except /health) require Firebase ID token in the header:
        "message": "Total revenue for period fetched successfully"
      }
 
+13. POST /users/sync
+   Description: Sync user after Firebase Auth signup (called by frontend)
+   Params: None
+   Body:
+     {
+       "name": "<user_full_name>",
+       "email": "<user_email>",
+       "role": "business_owner" | "warehouse" | "app_User"
+     }
+   Response:
+     {
+       "success": true,
+       "data": { "id": "<email>", "name": "...", "email": "...", "role": "..." },
+       "message": "User synced successfully"
+     }
+
+14. POST /users/cashiers
+   Description: Create a cashier account (business owners only)
+   Params: None
+   Body:
+     {
+       "name": "<cashier_full_name>",
+       "email": "<cashier_email>",
+       "password": "<cashier_password>"
+     }
+   Response:
+     {
+       "success": true,
+       "data": { "uid": "<firebase_uid>", "email": "...", "name": "..." },
+       "message": "Cashier account created successfully"
+     }
+   Notes:
+     - Requires business_owner role
+     - Creates Firebase Auth account and Firestore document
+     - Password must be at least 6 characters
+
 ================================================================================
                            OTHER ENDPOINTS
 ================================================================================
