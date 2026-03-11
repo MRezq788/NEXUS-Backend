@@ -18,6 +18,10 @@ import {
   getCurrentUserProfileService,
   createCashierService,
   getCashiersService,
+  allocateInventoryToCashierService,
+  returnInventoryFromCashierService,
+  getAllocationHistoryService,
+  createCashierPosSaleService,
 } from "./user.service";
 
 export const getUserSoldTotalController = async (
@@ -447,6 +451,158 @@ export const getCashiersController = async (
     console.error("Error in getCashiers controller:", error);
 
     // Catch business logic errors from the service
+    if (error.message.includes("Business Logic Error")) {
+      res.status(400).json({ success: false, message: error.message });
+      return;
+    }
+
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const allocateInventoryToCashierController = async (
+  req: Request | any,
+  res: Response,
+): Promise<void> => {
+  try {
+    const ownerEmail = req.user?.email;
+
+    if (!ownerEmail) {
+      res.status(401).json({
+        success: false,
+        message: "Unauthorized: No authenticated user found.",
+      });
+      return;
+    }
+
+    const { cashierId, productId, variantId, quantity } = req.body;
+
+    const result = await allocateInventoryToCashierService(ownerEmail, {
+      cashierId,
+      productId,
+      variantId,
+      quantity: Number(quantity),
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Inventory allocated successfully",
+      data: result,
+    });
+  } catch (error: any) {
+    console.error("Error in allocateInventoryToCashier controller:", error);
+
+    if (error.message.includes("Business Logic Error")) {
+      res.status(400).json({ success: false, message: error.message });
+      return;
+    }
+
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const returnInventoryFromCashierController = async (
+  req: Request | any,
+  res: Response,
+): Promise<void> => {
+  try {
+    const ownerEmail = req.user?.email;
+
+    if (!ownerEmail) {
+      res.status(401).json({
+        success: false,
+        message: "Unauthorized: No authenticated user found.",
+      });
+      return;
+    }
+
+    const { cashierId, productId, variantId, quantity } = req.body;
+
+    const result = await returnInventoryFromCashierService(ownerEmail, {
+      cashierId,
+      productId,
+      variantId,
+      quantity: Number(quantity),
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Inventory returned to owner successfully",
+      data: result,
+    });
+  } catch (error: any) {
+    console.error("Error in returnInventoryFromCashier controller:", error);
+
+    if (error.message.includes("Business Logic Error")) {
+      res.status(400).json({ success: false, message: error.message });
+      return;
+    }
+
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const getAllocationHistoryController = async (
+  req: Request | any,
+  res: Response,
+): Promise<void> => {
+  try {
+    const userEmail = req.user?.email;
+
+    if (!userEmail) {
+      res.status(401).json({
+        success: false,
+        message: "Unauthorized: No authenticated user found.",
+      });
+      return;
+    }
+
+    const limit = Number(req.query.limit) || 20;
+    const history = await getAllocationHistoryService(userEmail, limit);
+
+    res.status(200).json({
+      success: true,
+      message: "Allocation history fetched successfully",
+      data: { history },
+    });
+  } catch (error: any) {
+    console.error("Error in getAllocationHistory controller:", error);
+
+    if (error.message.includes("Business Logic Error")) {
+      res.status(400).json({ success: false, message: error.message });
+      return;
+    }
+
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const createCashierPosSaleController = async (
+  req: Request | any,
+  res: Response,
+): Promise<void> => {
+  try {
+    const cashierEmail = req.user?.email;
+
+    if (!cashierEmail) {
+      res.status(401).json({
+        success: false,
+        message: "Unauthorized: No authenticated user found.",
+      });
+      return;
+    }
+
+    const { items, order } = req.body;
+    const result = await createCashierPosSaleService(cashierEmail, items, order);
+
+    res.status(200).json({
+      success: true,
+      message: "POS sale completed successfully",
+      data: result,
+    });
+  } catch (error: any) {
+    console.error("Error in createCashierPosSale controller:", error);
+
     if (error.message.includes("Business Logic Error")) {
       res.status(400).json({ success: false, message: error.message });
       return;
