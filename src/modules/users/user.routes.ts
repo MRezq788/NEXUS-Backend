@@ -17,6 +17,10 @@ import {
   createCashierController,
   getUserProfileController,
   getCashiersController,
+  allocateInventoryToCashierController,
+  returnInventoryFromCashierController,
+  getAllocationHistoryController,
+  createCashierPosSaleController,
 } from "./user.controller";
 import { verifyToken } from "../../core/middleware/auth.middleware";
 
@@ -64,6 +68,34 @@ router.post("/sync", verifyToken, syncUser);
 // POST /api/users/cashiers
 // Business owners can create cashier accounts
 router.post("/cashiers", verifyToken, createCashierController);
+
+// POST /api/users/cashiers/allocate-inventory
+// Business owners can allocate product variants to their own cashiers
+router.post(
+  "/cashiers/allocate-inventory",
+  verifyToken,
+  allocateInventoryToCashierController,
+);
+
+router.post(
+  "/cashiers/return-inventory",
+  verifyToken,
+  returnInventoryFromCashierController,
+);
+
+router.get(
+  "/allocations/history",
+  verifyToken,
+  getAllocationHistoryController,
+);
+
+// POST /api/users/cashiers/pos-sales
+// Cashiers can register a sale during checkout, deducting stock accordingly
+router.post(
+  "/cashiers/pos-sales",
+  verifyToken,
+  createCashierPosSaleController,
+);
 
 // GET /api/users/cashiers
 // Business owners can view all cashiers they created

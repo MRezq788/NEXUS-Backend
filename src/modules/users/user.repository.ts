@@ -22,6 +22,67 @@ export interface CreateCashierData {
   businessOwnerId: string;
 }
 
+export interface AllocationInventoryInput {
+  cashierId: string;
+  productId: string;
+  variantId: string;
+  quantity: number;
+}
+
+export interface ReturnInventoryInput {
+  cashierId: string;
+  productId: string;
+  variantId: string;
+  quantity: number;
+}
+
+export interface ReturnInventoryResult {
+  cashierId: string;
+  productId: string;
+  variantId: string;
+  returnedQuantity: number;
+  ownerVariantQuantity: number;
+  ownerProductQuantity: number;
+  cashierVariantQuantity: number;
+  cashierProductQuantity: number;
+  historyEntry: AllocationHistoryEntry;
+}
+
+export interface CashierPosSaleItemInput {
+  productId: string;
+  variantId: string;
+  quantity: number;
+}
+
+export interface CashierPosSaleOrderInput {
+  orderNumber: string;
+  subtotal: number;
+  tax: number;
+  discount: number;
+  total: number;
+  orderType?: string;
+  tableId?: string | null;
+  customerName?: string;
+  promoCode?: string;
+  notes?: string;
+}
+
+export interface AllocationHistoryEntry {
+  id: string;
+  productId: string;
+  productName: string;
+  variantId: string;
+  variantLabel: string;
+  variantAttributes: string;
+  quantity: number;
+  ownerId: string;
+  ownerName: string;
+  cashierId: string;
+  cashierName: string;
+  createdAt: string;
+  movementType?: "allocate" | "return";
+}
+
 export const createUserDocument = async (userData: CreateUserData) => {
   // RULE: Force the Document ID to be the user's email
   const docRef = usersCollection.doc(userData.email);
@@ -105,13 +166,11 @@ export const getCashiersByBusinessOwner = async (businessOwnerId: string) => {
       .where("role", "==", "cashier")
       .get();
 
-    const cashiers = snapshot.docs.map((doc) => ({
+    return snapshot.docs.map((doc) => ({
       id: doc.id,
       email: doc.id,
       ...doc.data(),
     }));
-
-    return cashiers;
   } catch (error) {
     console.error("Error fetching cashiers:", error);
     return [];
@@ -215,11 +274,10 @@ export const getMostSoldItems = async (userId: string, range: number) => {
         (productCounts[productId] || 0) + item.quantity;
     });
   });
-  const sortedProducts = Object.entries(productCounts)
+  return Object.entries(productCounts)
     .sort((a, b) => b[1] - a[1])
     .slice(0, range)
     .map(([productId]) => productId);
-  return sortedProducts;
 };
 
 export const getTopCashiersSelling = async (userId: string, range: number) => {
@@ -238,11 +296,10 @@ export const getTopCashiersSelling = async (userId: string, range: number) => {
         (cashierTotals[cashierId] || 0) + (orderData.total || 0);
     }
   });
-  const sortedCashiers = Object.entries(cashierTotals)
+  return Object.entries(cashierTotals)
     .sort((a, b) => b[1] - a[1])
     .slice(0, range)
     .map(([cashierId, totalSold]) => ({ cashierId, totalSold }));
-  return sortedCashiers;
 };
 
 export const getUserRevenue = async (userId: string, period: string) => {
@@ -329,12 +386,10 @@ export const getUserRevenue = async (userId: string, period: string) => {
     ];
   }
 
-  const result = labels.map((label) => ({
+  return labels.map((label) => ({
     label,
     value: revenueData[label] || 0,
   }));
-
-  return result;
 };
 
 export const getTotalOrders = async (userId: string) => {
@@ -505,4 +560,436 @@ export const getTotalRevenueForPeriod = async (
 
   console.log("Total revenue:", total);
   return total;
+};
+
+export const allocateInventoryToCashierRepo = async (
+  ownerEmail: string,
+  payload: AllocationInventoryInput,
+) => {
+  const { cashierId, productId, variantId, quantity } = payload;
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const createdAt = new Date().toISOString();
+
+  return db.runTransaction(async (transaction) => {
+    const ownerRef = usersCollection.doc(ownerEmail);
+    const cashierRef = usersCollection.doc(cashierId);
+    const ownerProductRef = ownerRef.collection("products").doc(productId);
+    const ownerVariantRef = ownerProductRef.collection("variants").doc(variantId);
+    const cashierProductRef = cashierRef.collection("products").doc(productId);
+    const cashierVariantRef = cashierProductRef.collection("variants").doc(variantId);
+    const ownerHistoryRef = ownerRef.collection("allocationHistory").doc();
+    const cashierHistoryRef = cashierRef.collection("allocationHistory").doc(ownerHistoryRef.id);
+
+    const [ownerSnap, cashierSnap, ownerProductSnap, ownerVariantSnap, cashierProductSnap, cashierVariantSnap, ownerVariantsSnap, cashierVariantsSnap] = await Promise.all([
+      transaction.get(ownerRef),
+      transaction.get(cashierRef),
+      transaction.get(ownerProductRef),
+      transaction.get(ownerVariantRef),
+      transaction.get(cashierProductRef),
+      transaction.get(cashierVariantRef),
+      transaction.get(ownerProductRef.collection("variants")),
+      transaction.get(cashierProductRef.collection("variants")),
+    ]);
+
+    if (!ownerSnap.exists) {
+      throw new Error("Business Logic Error: Business owner not found.");
+    }
+
+    if (!cashierSnap.exists) {
+      throw new Error("Business Logic Error: Cashier not found.");
+    }
+
+    const ownerData = ownerSnap.data() || {};
+    const cashierData = cashierSnap.data() || {};
+    if (cashierData.role !== "cashier") {
+      throw new Error("Business Logic Error: Selected user is not a cashier.");
+    }
+
+    if (cashierData.businessOwnerId !== ownerEmail) {
+      throw new Error("Business Logic Error: You can only allocate inventory to your own cashiers.");
+    }
+
+    if (!ownerProductSnap.exists) {
+      throw new Error("Business Logic Error: Product not found in business owner inventory.");
+    }
+
+    if (!ownerVariantSnap.exists) {
+      throw new Error("Business Logic Error: Variant not found in business owner inventory.");
+    }
+
+    const ownerProductData = ownerProductSnap.data() || {};
+    const ownerVariantData = ownerVariantSnap.data() || {};
+    const ownerVariantQty = Number(ownerVariantData.quantity) || 0;
+
+    if (ownerVariantQty < quantity) {
+      throw new Error("Business Logic Error: Allocated quantity exceeds available online quantity.");
+    }
+
+    const nextOwnerVariantQty = ownerVariantQty - quantity;
+    const ownerRemainingProductQuantity = ownerVariantsSnap.docs.reduce((sum, doc) => {
+      const docQty = Number(doc.data().quantity) || 0;
+      return sum + (doc.id === variantId ? nextOwnerVariantQty : docQty);
+    }, 0);
+
+    const cashierExistingVariantQty = cashierVariantSnap.exists
+      ? Number(cashierVariantSnap.data()?.quantity) || 0
+      : 0;
+    const nextCashierVariantQty = cashierExistingVariantQty + quantity;
+    const cashierProductQuantity = cashierVariantsSnap.docs.reduce((sum, doc) => {
+      const docQty = Number(doc.data().quantity) || 0;
+      return sum + (doc.id === variantId ? nextCashierVariantQty : docQty);
+    }, cashierVariantSnap.exists ? 0 : quantity);
+
+    if (!cashierProductSnap.exists) {
+      transaction.set(cashierProductRef, {
+        name: ownerProductData.name,
+        description: ownerProductData.description ?? "",
+        basePrice: ownerProductData.basePrice,
+        category: ownerProductData.category ?? "",
+        images: ownerProductData.images ?? [],
+        attributes: ownerProductData.attributes ?? [],
+        active: ownerProductData.active ?? true,
+        sourceOwnerId: ownerEmail,
+        sourceProductId: productId,
+        allocatedBy: ownerEmail,
+        createdAt: now,
+        updatedAt: now,
+      });
+    } else {
+      transaction.set(
+        cashierProductRef,
+        {
+          name: ownerProductData.name,
+          description: ownerProductData.description ?? "",
+          basePrice: ownerProductData.basePrice,
+          category: ownerProductData.category ?? "",
+          images: ownerProductData.images ?? [],
+          attributes: ownerProductData.attributes ?? [],
+          active: ownerProductData.active ?? true,
+          sourceOwnerId: ownerEmail,
+          sourceProductId: productId,
+          allocatedBy: ownerEmail,
+          updatedAt: now,
+        },
+        { merge: true },
+      );
+    }
+
+    transaction.set(
+      cashierVariantRef,
+      {
+        attributes: ownerVariantData.attributes ?? {},
+        price: ownerVariantData.price ?? ownerProductData.basePrice ?? 0,
+        quantity: nextCashierVariantQty,
+        sourceOwnerId: ownerEmail,
+        sourceProductId: productId,
+        sourceVariantId: variantId,
+        updatedAt: now,
+        ...(cashierVariantSnap.exists ? {} : { createdAt: now }),
+      },
+      { merge: true },
+    );
+
+    transaction.update(ownerVariantRef, {
+      quantity: nextOwnerVariantQty,
+    });
+
+    transaction.set(
+      ownerProductRef,
+      {
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+
+    const variantAttributes = Object.entries(ownerVariantData.attributes ?? {})
+      .map(([key, value]) => `${key}: ${value}`)
+      .join(", ");
+    const allocationHistoryEntry: AllocationHistoryEntry = {
+      id: ownerHistoryRef.id,
+      productId,
+      productName: ownerProductData.name ?? "Unnamed Product",
+      variantId,
+      variantLabel: variantAttributes || variantId,
+      variantAttributes: variantAttributes || "Default variant",
+      quantity,
+      ownerId: ownerEmail,
+      ownerName: ownerData.name ?? ownerEmail,
+      cashierId,
+      cashierName: cashierData.name ?? cashierId,
+      createdAt,
+    };
+
+    transaction.set(ownerHistoryRef, allocationHistoryEntry);
+    transaction.set(cashierHistoryRef, allocationHistoryEntry);
+
+    return {
+      cashierId,
+      productId,
+      variantId,
+      allocatedQuantity: quantity,
+      ownerRemainingVariantQuantity: nextOwnerVariantQty,
+      ownerRemainingProductQuantity,
+      cashierVariantQuantity: nextCashierVariantQty,
+      cashierProductQuantity,
+      historyEntry: allocationHistoryEntry,
+    };
+  });
+};
+
+export const createCashierPosSaleRepo = async (
+  cashierEmail: string,
+  items: CashierPosSaleItemInput[],
+  order: CashierPosSaleOrderInput,
+) => {
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  return db.runTransaction(async (transaction) => {
+    const cashierRef = usersCollection.doc(cashierEmail);
+    const cashierSnap = await transaction.get(cashierRef);
+
+    if (!cashierSnap.exists) {
+      throw new Error("Business Logic Error: Cashier not found.");
+    }
+
+    const cashierData = cashierSnap.data() || {};
+    if (cashierData.role !== "cashier") {
+      throw new Error("Business Logic Error: Only cashiers can place POS sales.");
+    }
+
+    const updates: Array<{
+      productRef: FirebaseFirestore.DocumentReference;
+      variantRef: FirebaseFirestore.DocumentReference;
+      variantId: string;
+      productId: string;
+      nextQuantity: number;
+    }> = [];
+
+    for (const item of items) {
+      const productRef = cashierRef.collection("products").doc(item.productId);
+      const variantRef = productRef.collection("variants").doc(item.variantId);
+      const variantSnap = await transaction.get(variantRef);
+
+      if (!variantSnap.exists) {
+        throw new Error(`Business Logic Error: Variant ${item.variantId} not found.`);
+      }
+
+      const variantData = variantSnap.data() || {};
+      const currentQty = Number(variantData.quantity) || 0;
+
+      if (currentQty < item.quantity) {
+        throw new Error(
+          `Business Logic Error: Insufficient stock for variant ${item.variantId}.`,
+        );
+      }
+
+      updates.push({
+        productRef,
+        variantRef,
+        variantId: item.variantId,
+        productId: item.productId,
+        nextQuantity: currentQty - item.quantity,
+      });
+    }
+
+    updates.forEach((update) => {
+      transaction.update(update.variantRef, {
+        quantity: update.nextQuantity,
+        updatedAt: now,
+      });
+
+      transaction.set(
+        update.productRef,
+        {
+          updatedAt: now,
+        },
+        { merge: true },
+      );
+    });
+
+    const orderRef = cashierRef.collection("orders").doc();
+    transaction.set(orderRef, {
+      orderNumber: order.orderNumber,
+      subtotal: order.subtotal,
+      tax: order.tax,
+      discount: order.discount,
+      total: order.total,
+      orderType: order.orderType || "Dine In",
+      tableId: order.tableId || null,
+      customerName: order.customerName || "",
+      promoCode: order.promoCode || "",
+      notes: order.notes || "",
+      type: "sold",
+      executorType: "cashier",
+      executorId: cashierEmail,
+      products: items,
+      createdAt: now,
+      updatedAt: now,
+      status: "completed",
+    });
+
+    return {
+      orderId: orderRef.id,
+      items: updates.map((update) => ({
+        productId: update.productId,
+        variantId: update.variantId,
+        remainingQuantity: update.nextQuantity,
+      })),
+    };
+  });
+};
+
+export const returnInventoryFromCashierRepo = async (
+  ownerEmail: string,
+  payload: ReturnInventoryInput,
+): Promise<ReturnInventoryResult> => {
+  const { cashierId, productId, variantId, quantity } = payload;
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const createdAt = new Date().toISOString();
+
+  return db.runTransaction(async (transaction) => {
+    const ownerRef = usersCollection.doc(ownerEmail);
+    const cashierRef = usersCollection.doc(cashierId);
+    const ownerProductRef = ownerRef.collection("products").doc(productId);
+    const ownerVariantRef = ownerProductRef.collection("variants").doc(variantId);
+    const cashierProductRef = cashierRef.collection("products").doc(productId);
+    const cashierVariantRef = cashierProductRef.collection("variants").doc(variantId);
+    const ownerHistoryRef = ownerRef.collection("allocationHistory").doc();
+    const cashierHistoryRef = cashierRef.collection("allocationHistory").doc(ownerHistoryRef.id);
+
+    const [
+      ownerSnap,
+      cashierSnap,
+      ownerProductSnap,
+      ownerVariantSnap,
+      cashierProductSnap,
+      cashierVariantSnap,
+      ownerVariantsSnap,
+      cashierVariantsSnap,
+    ] = await Promise.all([
+      transaction.get(ownerRef),
+      transaction.get(cashierRef),
+      transaction.get(ownerProductRef),
+      transaction.get(ownerVariantRef),
+      transaction.get(cashierProductRef),
+      transaction.get(cashierVariantRef),
+      transaction.get(ownerProductRef.collection("variants")),
+      transaction.get(cashierProductRef.collection("variants")),
+    ]);
+
+    if (!ownerSnap.exists) {
+      throw new Error("Business Logic Error: Business owner not found.");
+    }
+
+    if (!cashierSnap.exists) {
+      throw new Error("Business Logic Error: Cashier not found.");
+    }
+
+    const ownerData = ownerSnap.data() || {};
+    const cashierData = cashierSnap.data() || {};
+
+    if (cashierData.role !== "cashier") {
+      throw new Error("Business Logic Error: Selected user is not a cashier.");
+    }
+
+    if (cashierData.businessOwnerId !== ownerEmail) {
+      throw new Error("Business Logic Error: You can only edit inventory for your own cashiers.");
+    }
+
+    if (!cashierProductSnap.exists || !cashierVariantSnap.exists) {
+      throw new Error("Business Logic Error: Variant not found in cashier inventory.");
+    }
+
+    if (!ownerProductSnap.exists || !ownerVariantSnap.exists) {
+      throw new Error("Business Logic Error: Variant not found in owner inventory.");
+    }
+
+    const cashierVariantData = cashierVariantSnap.data() || {};
+    const ownerVariantData = ownerVariantSnap.data() || {};
+    const ownerProductData = ownerProductSnap.data() || {};
+
+    const cashierVariantQty = Number(cashierVariantData.quantity) || 0;
+    if (cashierVariantQty < quantity) {
+      throw new Error("Business Logic Error: Returned quantity exceeds cashier available quantity.");
+    }
+
+    const ownerVariantQty = Number(ownerVariantData.quantity) || 0;
+    const nextCashierVariantQty = cashierVariantQty - quantity;
+    const nextOwnerVariantQty = ownerVariantQty + quantity;
+
+    const cashierProductQuantity = cashierVariantsSnap.docs.reduce((sum, doc) => {
+      const docQty = Number(doc.data().quantity) || 0;
+      return sum + (doc.id === variantId ? nextCashierVariantQty : docQty);
+    }, 0);
+
+    const ownerProductQuantity = ownerVariantsSnap.docs.reduce((sum, doc) => {
+      const docQty = Number(doc.data().quantity) || 0;
+      return sum + (doc.id === variantId ? nextOwnerVariantQty : docQty);
+    }, 0);
+
+    transaction.update(cashierVariantRef, {
+      quantity: nextCashierVariantQty,
+      updatedAt: now,
+    });
+
+    transaction.update(ownerVariantRef, {
+      quantity: nextOwnerVariantQty,
+      updatedAt: now,
+    });
+
+    transaction.set(cashierProductRef, { updatedAt: now }, { merge: true });
+    transaction.set(ownerProductRef, { updatedAt: now }, { merge: true });
+
+    const variantAttributes = Object.entries(cashierVariantData.attributes ?? {})
+      .map(([key, value]) => `${key}: ${value}`)
+      .join(", ");
+
+    const historyEntry: AllocationHistoryEntry = {
+      id: ownerHistoryRef.id,
+      productId,
+      productName: ownerProductData.name ?? "Unnamed Product",
+      variantId,
+      variantLabel: variantAttributes || variantId,
+      variantAttributes: variantAttributes || "Default variant",
+      quantity,
+      ownerId: ownerEmail,
+      ownerName: ownerData.name ?? ownerEmail,
+      cashierId,
+      cashierName: cashierData.name ?? cashierId,
+      createdAt,
+      movementType: "return",
+    };
+
+    transaction.set(ownerHistoryRef, historyEntry);
+    transaction.set(cashierHistoryRef, historyEntry);
+
+    return {
+      cashierId,
+      productId,
+      variantId,
+      returnedQuantity: quantity,
+      ownerVariantQuantity: nextOwnerVariantQty,
+      ownerProductQuantity,
+      cashierVariantQuantity: nextCashierVariantQty,
+      cashierProductQuantity,
+      historyEntry,
+    };
+  });
+};
+
+export const getAllocationHistoryByUser = async (
+  userId: string,
+  limit: number = 20,
+): Promise<AllocationHistoryEntry[]> => {
+  const snapshot = await usersCollection
+    .doc(userId)
+    .collection("allocationHistory")
+    .orderBy("createdAt", "desc")
+    .limit(limit)
+    .get();
+
+  return snapshot.docs.map((doc) => ({
+    id: doc.id,
+    ...(doc.data() as Omit<AllocationHistoryEntry, "id">),
+  }));
 };

@@ -20,6 +20,14 @@ import {
   createCashierAccount,
   CreateCashierData,
   getCashiersByBusinessOwner,
+  allocateInventoryToCashierRepo,
+  AllocationInventoryInput,
+  returnInventoryFromCashierRepo,
+  ReturnInventoryInput,
+  getAllocationHistoryByUser,
+  createCashierPosSaleRepo,
+  CashierPosSaleItemInput,
+  CashierPosSaleOrderInput,
 } from "./user.repository";
 
 export async function getUserSoldTotal(userId: string) {
@@ -118,9 +126,7 @@ export const syncNewUser = async (data: CreateUserData) => {
   }
 
   // Delegate the actual database creation to the repository
-  const createdUser = await createUserDocument(data);
-
-  return createdUser;
+  return createUserDocument(data);
 };
 
 export const createCashierService = async (data: CreateCashierData) => {
@@ -154,9 +160,7 @@ export const createCashierService = async (data: CreateCashierData) => {
   }
 
   // Create the cashier account
-  const createdCashier = await createCashierAccount(data);
-
-  return createdCashier;
+  return createCashierAccount(data);
 };
 
 export const getCashiersService = async (businessOwnerId: string) => {
@@ -171,7 +175,114 @@ export const getCashiersService = async (businessOwnerId: string) => {
   }
 
   // Get all cashiers for this business owner
-  const cashiers = await getCashiersByBusinessOwner(businessOwnerId);
+  return getCashiersByBusinessOwner(businessOwnerId);
+};
 
-  return cashiers;
+export const allocateInventoryToCashierService = async (
+  ownerEmail: string,
+  payload: AllocationInventoryInput,
+) => {
+  if (!ownerEmail) {
+    throw new Error("Business Logic Error: Missing authenticated business owner.");
+  }
+
+  const { cashierId, productId, variantId, quantity } = payload;
+
+  if (!cashierId || !productId || !variantId) {
+    throw new Error("Business Logic Error: cashierId, productId, and variantId are required.");
+  }
+
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    throw new Error("Business Logic Error: quantity must be a positive integer.");
+  }
+
+  const businessOwner = await getUserData(ownerEmail);
+  if (!businessOwner || !businessOwner.email) {
+    throw new Error("Business Logic Error: Invalid business owner ID.");
+  }
+
+  if (businessOwner.role !== "business_owner") {
+    throw new Error("Business Logic Error: Only business owners can allocate inventory.");
+  }
+
+  return allocateInventoryToCashierRepo(ownerEmail, payload);
+};
+
+export const returnInventoryFromCashierService = async (
+  ownerEmail: string,
+  payload: ReturnInventoryInput,
+) => {
+  if (!ownerEmail) {
+    throw new Error("Business Logic Error: Missing authenticated business owner.");
+  }
+
+  const { cashierId, productId, variantId, quantity } = payload;
+
+  if (!cashierId || !productId || !variantId) {
+    throw new Error("Business Logic Error: cashierId, productId, and variantId are required.");
+  }
+
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    throw new Error("Business Logic Error: quantity must be a positive integer.");
+  }
+
+  const businessOwner = await getUserData(ownerEmail);
+  if (!businessOwner || !businessOwner.email) {
+    throw new Error("Business Logic Error: Invalid business owner ID.");
+  }
+
+  if (businessOwner.role !== "business_owner") {
+    throw new Error("Business Logic Error: Only business owners can return inventory from cashier.");
+  }
+
+  return returnInventoryFromCashierRepo(ownerEmail, payload);
+};
+
+export const getAllocationHistoryService = async (
+  userEmail: string,
+  limit: number,
+) => {
+  if (!userEmail) {
+    throw new Error("Business Logic Error: Missing authenticated user.");
+  }
+
+  if (!Number.isInteger(limit) || limit <= 0) {
+    throw new Error("Business Logic Error: limit must be a positive integer.");
+  }
+
+  return getAllocationHistoryByUser(userEmail, limit);
+};
+
+export const createCashierPosSaleService = async (
+  cashierEmail: string,
+  items: CashierPosSaleItemInput[],
+  order: CashierPosSaleOrderInput,
+) => {
+  if (!cashierEmail) {
+    throw new Error("Business Logic Error: Missing authenticated user.");
+  }
+
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error("Business Logic Error: At least one sale item is required.");
+  }
+
+  for (const item of items) {
+    if (!item.productId || !item.variantId) {
+      throw new Error("Business Logic Error: productId and variantId are required for each item.");
+    }
+
+    if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
+      throw new Error("Business Logic Error: quantity must be a positive integer for each item.");
+    }
+  }
+
+  if (!order?.orderNumber) {
+    throw new Error("Business Logic Error: orderNumber is required.");
+  }
+
+  if (typeof order.total !== "number" || order.total < 0) {
+    throw new Error("Business Logic Error: total must be a non-negative number.");
+  }
+
+  return createCashierPosSaleRepo(cashierEmail, items, order);
 };
