@@ -3,7 +3,6 @@ import {
   doc,
   getDocs,
   getDoc,
-  addDoc,
   updateDoc,
   query,
   where,
@@ -101,10 +100,14 @@ export class ProductRepository {
 
     const variantsRef = collection(productDoc, 'variants');
     const variantsSnap = await getDocs(variantsRef);
-    const variants: ProductVariant[] = variantsSnap.docs.map((vDoc) => ({
-      id: vDoc.id,
-      ...(vDoc.data() as Omit<ProductVariant, 'id'>),
-    }));
+    const variants: ProductVariant[] = variantsSnap.docs.map((vDoc) => {
+      const vData = vDoc.data();
+      if (vData.attributes) {
+        const { attributes, ...rest } = vData;
+        return { id: vDoc.id, ...attributes, ...rest };
+      }
+      return { id: vDoc.id, ...vData } as ProductVariant;
+    });
 
     return this.formatProduct(snapshot, variants);
   }
@@ -117,7 +120,7 @@ export class ProductRepository {
     const now = new Date();
     const status = computeStatus(productData.quantity || 0);
 
-    const data = {
+    const data: Record<string, any> = {
       name: productData.name || '',
       quantity: productData.quantity || 0,
       unit: productData.unit || 'kg',
@@ -130,11 +133,35 @@ export class ProductRepository {
       updatedAt: now.toISOString(),
     };
 
+    // Include optional fields if provided
+    if (productData.basePrice !== undefined) data.basePrice = productData.basePrice;
+    if (productData.images !== undefined) data.images = productData.images;
+    if (productData.attributes !== undefined) data.attributes = productData.attributes;
+    if (productData.active !== undefined) data.active = productData.active;
+
     const productsRef = getUserProductsCollection(userEmail);
-    const docRef = await addDoc(productsRef, data);
+    const batch = writeBatch(db);
+    const productDocRef = doc(productsRef); // auto-ID for the product
+    batch.set(productDocRef, data);
+
+    // Create variants subcollection if provided
+    if (Array.isArray(productData.variants) && productData.variants.length > 0) {
+      for (const variant of productData.variants) {
+        const variantRef = doc(collection(productDocRef, 'variants')); // auto-ID
+        const { price, quantity, attributes, ...rest } = variant;
+        batch.set(variantRef, {
+          ...(attributes || {}),
+          ...rest,
+          price: price || 0,
+          quantity: quantity || 0,
+        });
+      }
+    }
+
+    await batch.commit();
     
     return {
-      id: docRef.id,
+      id: productDocRef.id,
       ...data,
       lastUpdated: formatDate(now),
       createdAt: formatDate(now),
@@ -189,16 +216,13 @@ export class ProductRepository {
 
       // Write new variants
       for (const variant of productData.variants) {
-        const rawId = Object.values(variant.attributes)
-          .join('_')
-          .toLowerCase()
-          .replace(/\s+/g, '_');
-        const variantId = rawId || 'default';
-        const variantRef = doc(variantsRef, variantId);
+        const variantRef = doc(variantsRef); // auto-generated ID
+        const { id: _id, price, quantity, attributes, ...rest } = variant;
         batch.set(variantRef, {
-          attributes: variant.attributes,
-          price:      variant.price,
-          quantity:   variant.quantity,
+          ...(attributes || {}),
+          ...rest,
+          price:      price,
+          quantity:   quantity,
         });
       }
     }
@@ -208,10 +232,14 @@ export class ProductRepository {
     // Re-fetch with variants
     const updated = await getDoc(productDoc);
     const variantsSnap = await getDocs(collection(productDoc, 'variants'));
-    const variants: ProductVariant[] = variantsSnap.docs.map((vDoc) => ({
-      id: vDoc.id,
-      ...(vDoc.data() as Omit<ProductVariant, 'id'>),
-    }));
+    const variants: ProductVariant[] = variantsSnap.docs.map((vDoc) => {
+      const vData = vDoc.data();
+      if (vData.attributes) {
+        const { attributes, ...rest } = vData;
+        return { id: vDoc.id, ...attributes, ...rest };
+      }
+      return { id: vDoc.id, ...vData } as ProductVariant;
+    });
 
     return this.formatProduct(updated, variants);
   }

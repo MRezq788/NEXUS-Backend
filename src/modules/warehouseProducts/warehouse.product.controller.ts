@@ -60,7 +60,10 @@ export class ProductController {
   createProduct = async (req: Request, res: Response) => {  
     try {
       const userEmail = this.getUserEmail(req);
-      const { name, quantity, unit, price, description, category } = req.body;
+      const {
+        name, quantity, unit, price, basePrice,
+        description, category, images, attributes, variants, active,
+      } = req.body;
       
       if (!name) {
         return errorResponse(res, 'Product name is required', 400);
@@ -71,8 +74,13 @@ export class ProductController {
         quantity,
         unit,
         price,
+        basePrice,
         description,
         category,
+        images,
+        attributes,
+        variants,
+        active,
       });
 
       return successResponse(res, product, 'Product created successfully', 201);

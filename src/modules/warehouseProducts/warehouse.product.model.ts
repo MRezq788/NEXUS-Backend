@@ -2,9 +2,9 @@ export type ProductStatus = 'In Stock' | 'Out of Stock';
 
 export interface ProductVariant {
   id: string;
-  attributes: Record<string, string>;
   price: number;
   quantity: number;
+  [key: string]: any;
 }
 
 export interface ProductAttribute {

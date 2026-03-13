@@ -4,9 +4,9 @@ import { FieldValue } from 'firebase-admin/firestore';
 const db = admin.firestore();
 
 export interface ProductVariant {
-  attributes: Record<string, string>;
   price: number;
   quantity: number;
+  [key: string]: any;
 }
 
 export interface ProductAttribute {
@@ -61,10 +61,21 @@ export const getProductsRepo = async (
       const data = productDoc.data();
 
       const variantsSnap = await productDoc.ref.collection('variants').get();
-      const variants = variantsSnap.docs.map((vDoc) => ({
-        id: vDoc.id,
-        ...(vDoc.data() as ProductVariant),
-      }));
+      const variants = variantsSnap.docs.map((vDoc) => {
+        const vData = vDoc.data();
+        if (vData.attributes) {
+            const { attributes, ...rest } = vData;
+            return {
+                id: vDoc.id,
+                ...attributes,
+                ...rest
+            };
+        }
+        return {
+          id: vDoc.id,
+          ...vData,
+        };
+      });
 
       return {
         id: productDoc.id,
@@ -121,17 +132,15 @@ export const createProductRepo = async (
   });
 
   for (const variant of input.variants) {
-    const rawId = Object.values(variant.attributes)
-      .join('_')
-      .toLowerCase()
-      .replace(/\s+/g, '_');
-    const variantId = rawId || 'default';
-
-    const variantRef = productDocRef.collection('variants').doc(variantId);
+    const variantRef = productDocRef.collection('variants').doc(); // auto-generated ID
+    // Flatten attributes if they were sent within an attributes object, 
+    // or just spread if already flattened from frontend
+    const { price, quantity, attributes, ...rest } = variant;
     batch.set(variantRef, {
-      attributes: variant.attributes,
-      price: variant.price,
-      quantity: variant.quantity,
+      ...(attributes || {}),
+      ...rest,
+      price,
+      quantity,
     });
   }
 

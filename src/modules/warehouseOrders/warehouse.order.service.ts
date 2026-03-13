@@ -8,16 +8,15 @@ import {
 } from "../warehouseProducts/warehouse.product.model";
 
 export class OrderService {
-  private buildVariantId(attributes: Record<string, string>): string {
-    const raw = Object.entries(attributes)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, value]) => `${key}-${String(value)}`)
-      .join("-")
-      .toLowerCase()
-      .replace(/\s+/g, "-")
-      .replace(/[^a-z0-9_-]/g, "");
-
-    return raw || "default";
+  // Compare two attribute objects for equality (order-independent)
+  private attributesMatch(
+    a: Record<string, string>,
+    b: Record<string, string>,
+  ): boolean {
+    const keysA = Object.keys(a).sort();
+    const keysB = Object.keys(b).sort();
+    if (keysA.length !== keysB.length) return false;
+    return keysA.every((key, i) => key === keysB[i] && a[key] === b[key]);
   }
 
   private mergeAttributeValues(
@@ -507,15 +506,18 @@ export class OrderService {
             )
           : undefined;
 
+        const { id: _svId, price: _svPrice, quantity: _svQuantity, ...sourceVariantAttributesRest } = sourceVariant || {};
+        const sourceVariantAttributes = sourceVariant ? sourceVariantAttributesRest : undefined;
+
         const selectedVariantAttributes: Record<string, string> =
-          item.variantAttributes || sourceVariant?.attributes || {};
+          item.variantAttributes || sourceVariantAttributes || {};
 
         const selectedVariantPrice = Number(
           sourceVariant?.price ?? item.price ?? basePrice,
         );
 
-        const selectedVariantId =
-          item.variantId || this.buildVariantId(selectedVariantAttributes);
+        const hasSelectedAttributes =
+          Object.keys(selectedVariantAttributes).length > 0;
 
         if (existingProduct) {
           const existingVariants = Array.isArray(existingProduct.variants)
@@ -523,29 +525,33 @@ export class OrderService {
             : [];
           const hasExistingVariants = existingVariants.length > 0;
 
-          if (item.variantId || hasExistingVariants) {
+          if (hasSelectedAttributes || hasExistingVariants) {
             const variants = hasExistingVariants
               ? existingVariants
               : [
                   {
-                    id: "default",
-                    attributes: {},
+                    id: crypto.randomUUID(),
                     price: basePrice,
                     quantity: Number(existingProduct.quantity) || 0,
                   },
                 ];
 
-            const variantIndex = variants.findIndex(
-              (variant) => variant.id === selectedVariantId,
-            );
+            // Find matching variant by attribute equality instead of by ID
+            const variantIndex = hasSelectedAttributes
+              ? variants.findIndex((variant) => {
+                  const { id: _id, price: _p, quantity: _q, ...vAttrs } = variant;
+                  return this.attributesMatch(
+                    vAttrs as Record<string, string>,
+                    selectedVariantAttributes,
+                  );
+                })
+              : -1;
 
             if (variantIndex >= 0) {
+              const { id: _id, price: _p, quantity: _q, ...oldAttrs } = variants[variantIndex];
               variants[variantIndex] = {
                 ...variants[variantIndex],
-                attributes:
-                  Object.keys(selectedVariantAttributes).length > 0
-                    ? selectedVariantAttributes
-                    : variants[variantIndex].attributes,
+                ...selectedVariantAttributes,
                 price: Number.isFinite(selectedVariantPrice)
                   ? selectedVariantPrice
                   : Number(variants[variantIndex].price) || 0,
@@ -554,9 +560,10 @@ export class OrderService {
                   item.quantity,
               };
             } else {
+              // New variant — auto-generated ID
               variants.push({
-                id: selectedVariantId,
-                attributes: selectedVariantAttributes,
+                id: crypto.randomUUID(),
+                ...selectedVariantAttributes,
                 price: selectedVariantPrice,
                 quantity: item.quantity,
               });
@@ -594,11 +601,11 @@ export class OrderService {
             Array.isArray(originalProduct.variants) &&
             originalProduct.variants.length > 0;
 
-          const initialVariants = item.variantId
+          const initialVariants = hasSelectedAttributes
             ? [
                 {
-                  id: selectedVariantId,
-                  attributes: selectedVariantAttributes,
+                  id: crypto.randomUUID(),
+                  ...selectedVariantAttributes,
                   price: selectedVariantPrice,
                   quantity: item.quantity,
                 },
@@ -606,15 +613,14 @@ export class OrderService {
             : hasProductVariants
               ? [
                   {
-                    id: "default",
-                    attributes: {},
+                    id: crypto.randomUUID(),
                     price: basePrice,
                     quantity: item.quantity,
                   },
                 ]
               : undefined;
 
-          const initialAttributes = item.variantId
+          const initialAttributes = hasSelectedAttributes
             ? this.mergeAttributeValues(
                 originalProduct.attributes,
                 selectedVariantAttributes,
