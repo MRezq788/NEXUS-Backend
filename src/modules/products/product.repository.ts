@@ -58,36 +58,88 @@ export const getProductsRepo = async (
 
   const products = await Promise.all(
     productsSnap.docs.map(async (productDoc) => {
-      const data = productDoc.data();
+      const cashierProductData = productDoc.data();
+      const sourceOwnerId = cashierProductData.sourceOwnerId as string | undefined;
+      const sourceProductId = cashierProductData.sourceProductId as string | undefined;
+
+      let displayProductData = cashierProductData;
+      const ownerVariantsById = new Map<string, FirebaseFirestore.DocumentData>();
+
+      if (sourceOwnerId && sourceProductId) {
+        const ownerProductRef = db
+          .collection('users')
+          .doc(sourceOwnerId)
+          .collection('products')
+          .doc(sourceProductId);
+
+        const [ownerProductSnap, ownerVariantsSnap] = await Promise.all([
+          ownerProductRef.get(),
+          ownerProductRef.collection('variants').get(),
+        ]);
+
+        if (ownerProductSnap.exists) {
+          displayProductData = {
+            ...ownerProductSnap.data(),
+            ...cashierProductData,
+          };
+        }
+
+        ownerVariantsSnap.docs.forEach((doc) => {
+          ownerVariantsById.set(doc.id, doc.data());
+        });
+      }
 
       const variantsSnap = await productDoc.ref.collection('variants').get();
       const variants = variantsSnap.docs.map((vDoc) => {
-        const vData = vDoc.data();
-        if (vData.attributes) {
-            const { attributes, ...rest } = vData;
-            return {
-                id: vDoc.id,
-                ...attributes,
-                ...rest
-            };
+        const cashierVariantData = vDoc.data();
+        const sourceVariantId = (cashierVariantData.sourceVariantId as string) || vDoc.id;
+        const ownerVariantData = ownerVariantsById.get(sourceVariantId);
+
+        if (ownerVariantData?.attributes) {
+          const { attributes, ...rest } = ownerVariantData;
+          return {
+            id: vDoc.id,
+            ...attributes,
+            ...rest,
+            quantity: Number(cashierVariantData.quantity ?? ownerVariantData.quantity ?? 0),
+            price: ownerVariantData.price ?? rest.price ?? 0,
+          };
         }
+
+        if (cashierVariantData.attributes) {
+          const { attributes, ...rest } = cashierVariantData;
+          return {
+            id: vDoc.id,
+            ...attributes,
+            ...rest,
+            quantity: Number(cashierVariantData.quantity ?? 0),
+          };
+        }
+
         return {
           id: vDoc.id,
-          ...vData,
+          ...(ownerVariantData ?? {}),
+          ...cashierVariantData,
+          quantity: Number(cashierVariantData.quantity ?? ownerVariantData?.quantity ?? 0),
+          price:
+            ownerVariantData?.price ??
+            cashierVariantData.price ??
+            displayProductData.basePrice ??
+            0,
         };
       });
 
       return {
         id: productDoc.id,
-        name: data.name,
-        description: data.description,
-        basePrice: data.basePrice,
-        category: data.category,
-        images: data.images ?? [],
-        attributes: data.attributes ?? [],
-        active: data.active,
-        createdAt: data.createdAt ?? null,
-        updatedAt: data.updatedAt ?? null,
+        name: displayProductData.name ?? '',
+        description: displayProductData.description ?? '',
+        basePrice: displayProductData.basePrice ?? 0,
+        category: displayProductData.category ?? '',
+        images: displayProductData.images ?? [],
+        attributes: displayProductData.attributes ?? [],
+        active: displayProductData.active ?? true,
+        createdAt: cashierProductData.createdAt ?? null,
+        updatedAt: cashierProductData.updatedAt ?? null,
         variants,
       } as ProductWithVariants;
     })
@@ -133,7 +185,7 @@ export const createProductRepo = async (
 
   for (const variant of input.variants) {
     const variantRef = productDocRef.collection('variants').doc(); // auto-generated ID
-    // Flatten attributes if they were sent within an attributes object, 
+    // Flatten attributes if they were sent within an attributes object,
     // or just spread if already flattened from frontend
     const { price, quantity, attributes, ...rest } = variant;
     batch.set(variantRef, {

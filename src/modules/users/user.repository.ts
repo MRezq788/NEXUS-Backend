@@ -1,5 +1,6 @@
 import { admin } from "../../core/config/firebase";
 import { AggregateField } from "firebase-admin/firestore";
+import { formatVariantAttributesSummary } from "../../core/utils/variantAttributes";
 const db = admin.firestore();
 const usersCollection = db.collection("users");
 
@@ -45,7 +46,7 @@ export interface ReturnInventoryResult {
   ownerProductQuantity: number;
   cashierVariantQuantity: number;
   cashierProductQuantity: number;
-  historyEntry: AllocationHistoryEntry;
+  historyEntry: AllocationHistoryEntryResolved;
 }
 
 export interface CashierPosSaleItemInput {
@@ -68,6 +69,18 @@ export interface CashierPosSaleOrderInput {
 }
 
 export interface AllocationHistoryEntry {
+  id: string;
+  productId: string;
+  variantId: string;
+  quantity: number;
+  ownerId: string;
+  cashierId: string;
+  createdAt: string;
+  movementType?: "allocate" | "return";
+}
+
+// Resolved shape returned to the frontend — built on read, not stored
+export interface AllocationHistoryEntryResolved {
   id: string;
   productId: string;
   productName: string;
@@ -640,50 +653,27 @@ export const allocateInventoryToCashierRepo = async (
       return sum + (doc.id === variantId ? nextCashierVariantQty : docQty);
     }, cashierVariantSnap.exists ? 0 : quantity);
 
-    if (!cashierProductSnap.exists) {
-      transaction.set(cashierProductRef, {
-        name: ownerProductData.name,
-        description: ownerProductData.description ?? "",
-        basePrice: ownerProductData.basePrice,
-        category: ownerProductData.category ?? "",
-        images: ownerProductData.images ?? [],
-        attributes: ownerProductData.attributes ?? [],
-        active: ownerProductData.active ?? true,
+    transaction.set(
+      cashierProductRef,
+      {
         sourceOwnerId: ownerEmail,
         sourceProductId: productId,
+        sourceProductRef: ownerProductRef,
         allocatedBy: ownerEmail,
-        createdAt: now,
         updatedAt: now,
-      });
-    } else {
-      transaction.set(
-        cashierProductRef,
-        {
-          name: ownerProductData.name,
-          description: ownerProductData.description ?? "",
-          basePrice: ownerProductData.basePrice,
-          category: ownerProductData.category ?? "",
-          images: ownerProductData.images ?? [],
-          attributes: ownerProductData.attributes ?? [],
-          active: ownerProductData.active ?? true,
-          sourceOwnerId: ownerEmail,
-          sourceProductId: productId,
-          allocatedBy: ownerEmail,
-          updatedAt: now,
-        },
-        { merge: true },
-      );
-    }
+        ...(cashierProductSnap.exists ? {} : { createdAt: now }),
+      },
+      { merge: true },
+    );
 
     transaction.set(
       cashierVariantRef,
       {
-        attributes: ownerVariantData.attributes ?? {},
-        price: ownerVariantData.price ?? ownerProductData.basePrice ?? 0,
-        quantity: nextCashierVariantQty,
         sourceOwnerId: ownerEmail,
         sourceProductId: productId,
         sourceVariantId: variantId,
+        sourceVariantRef: ownerVariantRef,
+        quantity: nextCashierVariantQty,
         updatedAt: now,
         ...(cashierVariantSnap.exists ? {} : { createdAt: now }),
       },
@@ -701,23 +691,27 @@ export const allocateInventoryToCashierRepo = async (
       },
       { merge: true },
     );
-
-    const variantAttributes = Object.entries(ownerVariantData.attributes ?? {})
-      .map(([key, value]) => `${key}: ${value}`)
-      .join(", ");
+    const variantAttributes = formatVariantAttributesSummary(
+      ownerVariantData as Record<string, unknown>,
+    );
     const allocationHistoryEntry: AllocationHistoryEntry = {
       id: ownerHistoryRef.id,
       productId,
-      productName: ownerProductData.name ?? "Unnamed Product",
       variantId,
-      variantLabel: variantAttributes || variantId,
-      variantAttributes: variantAttributes || "Default variant",
       quantity,
       ownerId: ownerEmail,
-      ownerName: ownerData.name ?? ownerEmail,
       cashierId,
-      cashierName: cashierData.name ?? cashierId,
       createdAt,
+    };
+
+    // Resolved shape returned immediately to the frontend (not stored)
+    const allocationHistoryEntryResolved: AllocationHistoryEntryResolved = {
+      ...allocationHistoryEntry,
+      productName: ownerProductData.name ?? "Unnamed Product",
+      variantLabel: variantAttributes || variantId,
+      variantAttributes: variantAttributes || "Default variant",
+      ownerName: ownerData.name ?? ownerEmail,
+      cashierName: cashierData.name ?? cashierId,
     };
 
     transaction.set(ownerHistoryRef, allocationHistoryEntry);
@@ -732,7 +726,7 @@ export const allocateInventoryToCashierRepo = async (
       ownerRemainingProductQuantity,
       cashierVariantQuantity: nextCashierVariantQty,
       cashierProductQuantity,
-      historyEntry: allocationHistoryEntry,
+      historyEntry: allocationHistoryEntryResolved,
     };
   });
 };
@@ -940,24 +934,29 @@ export const returnInventoryFromCashierRepo = async (
     transaction.set(cashierProductRef, { updatedAt: now }, { merge: true });
     transaction.set(ownerProductRef, { updatedAt: now }, { merge: true });
 
-    const variantAttributes = Object.entries(cashierVariantData.attributes ?? {})
-      .map(([key, value]) => `${key}: ${value}`)
-      .join(", ");
+    // Cashier variant only stores quantity — always read attributes from owner variant
+    const variantAttributes = formatVariantAttributesSummary(
+      ownerVariantData as Record<string, unknown>,
+    );
 
     const historyEntry: AllocationHistoryEntry = {
       id: ownerHistoryRef.id,
       productId,
-      productName: ownerProductData.name ?? "Unnamed Product",
       variantId,
-      variantLabel: variantAttributes || variantId,
-      variantAttributes: variantAttributes || "Default variant",
       quantity,
       ownerId: ownerEmail,
-      ownerName: ownerData.name ?? ownerEmail,
       cashierId,
-      cashierName: cashierData.name ?? cashierId,
       createdAt,
       movementType: "return",
+    };
+
+    const historyEntryResolved: AllocationHistoryEntryResolved = {
+      ...historyEntry,
+      productName: ownerProductData.name ?? "Unnamed Product",
+      variantLabel: variantAttributes || variantId,
+      variantAttributes: variantAttributes || "Default variant",
+      ownerName: ownerData.name ?? ownerEmail,
+      cashierName: cashierData.name ?? cashierId,
     };
 
     transaction.set(ownerHistoryRef, historyEntry);
@@ -972,7 +971,7 @@ export const returnInventoryFromCashierRepo = async (
       ownerProductQuantity,
       cashierVariantQuantity: nextCashierVariantQty,
       cashierProductQuantity,
-      historyEntry,
+      historyEntry: historyEntryResolved,
     };
   });
 };
@@ -980,7 +979,7 @@ export const returnInventoryFromCashierRepo = async (
 export const getAllocationHistoryByUser = async (
   userId: string,
   limit: number = 20,
-): Promise<AllocationHistoryEntry[]> => {
+): Promise<AllocationHistoryEntryResolved[]> => {
   const snapshot = await usersCollection
     .doc(userId)
     .collection("allocationHistory")
@@ -988,8 +987,70 @@ export const getAllocationHistoryByUser = async (
     .limit(limit)
     .get();
 
-  return snapshot.docs.map((doc) => ({
+  const raw = snapshot.docs.map((doc) => ({
     id: doc.id,
     ...(doc.data() as Omit<AllocationHistoryEntry, "id">),
   }));
+
+  // Resolve live product name, variant attributes, owner name, cashier name
+  return Promise.all(
+    raw.map(async (entry) => {
+      try {
+        const ownerRef = usersCollection.doc(entry.ownerId);
+        const cashierRef = usersCollection.doc(entry.cashierId);
+        const productRef = ownerRef.collection("products").doc(entry.productId);
+        const variantRef = productRef.collection("variants").doc(entry.variantId);
+
+        const [ownerSnap, cashierSnap, productSnap, variantSnap] = await Promise.all([
+          ownerRef.get(),
+          cashierRef.get(),
+          productRef.get(),
+          variantRef.get(),
+        ]);
+
+        const ownerData = ownerSnap.data() || {};
+        const cashierData = cashierSnap.data() || {};
+        const productData = productSnap.data() || {};
+        const variantData = variantSnap.data() || {};
+
+        const variantAttributes = formatVariantAttributesSummary(
+          variantData as Record<string, unknown>,
+        );
+
+        const resolved: AllocationHistoryEntryResolved = {
+          id: entry.id,
+          productId: entry.productId,
+          productName: productData.name ?? "Unnamed Product",
+          variantId: entry.variantId,
+          variantLabel: variantAttributes || entry.variantId,
+          variantAttributes: variantAttributes || "Default variant",
+          quantity: entry.quantity,
+          ownerId: entry.ownerId,
+          ownerName: ownerData.name ?? entry.ownerId,
+          cashierId: entry.cashierId,
+          cashierName: cashierData.name ?? entry.cashierId,
+          createdAt: entry.createdAt,
+          movementType: entry.movementType,
+        };
+        return resolved;
+      } catch {
+        // Fallback: return with IDs if resolution fails
+        return {
+          id: entry.id,
+          productId: entry.productId,
+          productName: "Unnamed Product",
+          variantId: entry.variantId,
+          variantLabel: entry.variantId,
+          variantAttributes: "Default variant",
+          quantity: entry.quantity,
+          ownerId: entry.ownerId,
+          ownerName: entry.ownerId,
+          cashierId: entry.cashierId,
+          cashierName: entry.cashierId,
+          createdAt: entry.createdAt,
+          movementType: entry.movementType,
+        } satisfies AllocationHistoryEntryResolved;
+      }
+    }),
+  );
 };
