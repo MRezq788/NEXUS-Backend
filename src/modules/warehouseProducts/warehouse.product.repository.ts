@@ -207,24 +207,36 @@ export class ProductRepository {
     const batch = writeBatch(db);
     batch.update(productDoc, updates);
 
-    // Replace variants subcollection if provided
+    // Update variants subcollection while preserving stable variant IDs
     if (Array.isArray(productData.variants)) {
-      // Delete existing variants first
       const variantsRef = collection(productDoc, 'variants');
       const existingVariants = await getDocs(variantsRef);
-      existingVariants.forEach((vDoc) => batch.delete(vDoc.ref));
 
-      // Write new variants
+      const incomingVariantIds = new Set<string>();
+
       for (const variant of productData.variants) {
-        const variantRef = doc(variantsRef); // auto-generated ID
-        const { id: _id, price, quantity, attributes, ...rest } = variant;
+        const { id: incomingId, price, quantity, attributes, ...rest } = variant as ProductVariant & { id?: string };
+        const variantId =
+          typeof incomingId === 'string' && incomingId.trim().length > 0
+            ? incomingId
+            : doc(variantsRef).id;
+        incomingVariantIds.add(variantId);
+
+        const variantRef = doc(variantsRef, variantId);
         batch.set(variantRef, {
           ...(attributes || {}),
           ...rest,
-          price:      price,
-          quantity:   quantity,
+          price: price,
+          quantity: quantity,
         });
       }
+
+      // Remove variants that no longer exist in payload
+      existingVariants.forEach((vDoc) => {
+        if (!incomingVariantIds.has(vDoc.id)) {
+          batch.delete(vDoc.ref);
+        }
+      });
     }
 
     await batch.commit();
