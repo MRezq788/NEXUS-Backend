@@ -53,6 +53,7 @@ export interface CashierPosSaleItemInput {
   productId: string;
   variantId: string;
   quantity: number;
+  price: number;
 }
 
 export interface CashierPosSaleOrderInput {
@@ -808,12 +809,19 @@ export const createCashierPosSaleRepo = async (
       );
     });
 
+    const soldProducts = items.map((item) => ({
+      productId: item.productId,
+      variantId: item.variantId,
+      quantity: item.quantity,
+      price: item.price,
+    }));
+
     const orderRef = cashierRef.collection("orders").doc();
     transaction.set(orderRef, {
       total: order.total,
       executorType: "cashier",
       executorId: cashierEmail,
-      products: items,
+      products: soldProducts,
       createdAt: now,
       updatedAt: now,
     });
@@ -828,7 +836,7 @@ export const createCashierPosSaleRepo = async (
       executorType: "cashier",
       executorId: cashierEmail,
       type: "sold",
-      products: items,
+      products: soldProducts,
       total: order.total,
     });
 
@@ -1003,13 +1011,29 @@ export const getAllocationHistoryByUser = async (
   }));
 
   // Resolve live product name, variant attributes, owner name, cashier name
-  return Promise.all(
-    raw.map(async (entry) => {
+  const resolvedHistory = await Promise.all(
+    raw.map(async (historyEntry) => {
+      const fallback: AllocationHistoryEntryResolved = {
+        id: historyEntry.id,
+        productId: historyEntry.productId,
+        productName: "Unnamed Product",
+        variantId: historyEntry.variantId,
+        variantLabel: historyEntry.variantId,
+        variantAttributes: "Default variant",
+        quantity: historyEntry.quantity,
+        ownerId: historyEntry.ownerId,
+        ownerName: historyEntry.ownerId,
+        cashierId: historyEntry.cashierId,
+        cashierName: historyEntry.cashierId,
+        createdAt: historyEntry.createdAt,
+        movementType: historyEntry.movementType,
+      };
+
       try {
-        const ownerRef = usersCollection.doc(entry.ownerId);
-        const cashierRef = usersCollection.doc(entry.cashierId);
-        const productRef = ownerRef.collection("products").doc(entry.productId);
-        const variantRef = productRef.collection("variants").doc(entry.variantId);
+        const ownerRef = usersCollection.doc(historyEntry.ownerId);
+        const cashierRef = usersCollection.doc(historyEntry.cashierId);
+        const productRef = ownerRef.collection("products").doc(historyEntry.productId);
+        const variantRef = productRef.collection("variants").doc(historyEntry.variantId);
 
         const [ownerSnap, cashierSnap, productSnap, variantSnap] = await Promise.all([
           ownerRef.get(),
@@ -1028,39 +1052,27 @@ export const getAllocationHistoryByUser = async (
         );
 
         const resolved: AllocationHistoryEntryResolved = {
-          id: entry.id,
-          productId: entry.productId,
+          id: historyEntry.id,
+          productId: historyEntry.productId,
           productName: productData.name ?? "Unnamed Product",
-          variantId: entry.variantId,
-          variantLabel: variantAttributes || entry.variantId,
+          variantId: historyEntry.variantId,
+          variantLabel: variantAttributes || historyEntry.variantId,
           variantAttributes: variantAttributes || "Default variant",
-          quantity: entry.quantity,
-          ownerId: entry.ownerId,
-          ownerName: ownerData.name ?? entry.ownerId,
-          cashierId: entry.cashierId,
-          cashierName: cashierData.name ?? entry.cashierId,
-          createdAt: entry.createdAt,
-          movementType: entry.movementType,
+          quantity: historyEntry.quantity,
+          ownerId: historyEntry.ownerId,
+          ownerName: ownerData.name ?? historyEntry.ownerId,
+          cashierId: historyEntry.cashierId,
+          cashierName: cashierData.name ?? historyEntry.cashierId,
+          createdAt: historyEntry.createdAt,
+          movementType: historyEntry.movementType,
         };
+
         return resolved;
       } catch {
-        // Fallback: return with IDs if resolution fails
-        return {
-          id: entry.id,
-          productId: entry.productId,
-          productName: "Unnamed Product",
-          variantId: entry.variantId,
-          variantLabel: entry.variantId,
-          variantAttributes: "Default variant",
-          quantity: entry.quantity,
-          ownerId: entry.ownerId,
-          ownerName: entry.ownerId,
-          cashierId: entry.cashierId,
-          cashierName: entry.cashierId,
-          createdAt: entry.createdAt,
-          movementType: entry.movementType,
-        } satisfies AllocationHistoryEntryResolved;
+        return fallback;
       }
     }),
   );
+
+  return resolvedHistory;
 };

@@ -274,6 +274,10 @@ export const createCashierPosSaleService = async (
     if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
       throw new Error("Business Logic Error: quantity must be a positive integer for each item.");
     }
+
+    if (!Number.isFinite(item.price) || item.price < 0) {
+      throw new Error("Business Logic Error: price must be a non-negative number for each item.");
+    }
   }
 
 
