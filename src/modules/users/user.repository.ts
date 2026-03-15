@@ -56,16 +56,7 @@ export interface CashierPosSaleItemInput {
 }
 
 export interface CashierPosSaleOrderInput {
-  orderNumber: string;
-  subtotal: number;
-  tax: number;
-  discount: number;
   total: number;
-  orderType?: string;
-  tableId?: string | null;
-  customerName?: string;
-  promoCode?: string;
-  notes?: string;
 }
 
 export interface AllocationHistoryEntry {
@@ -751,6 +742,22 @@ export const createCashierPosSaleRepo = async (
       throw new Error("Business Logic Error: Only cashiers can place POS sales.");
     }
 
+    const ownerEmail =
+      typeof cashierData.businessOwnerId === "string"
+        ? cashierData.businessOwnerId.trim()
+        : "";
+
+    if (!ownerEmail) {
+      throw new Error("Business Logic Error: Cashier is not linked to a business owner.");
+    }
+
+    const ownerRef = usersCollection.doc(ownerEmail);
+    const ownerSnap = await transaction.get(ownerRef);
+
+    if (!ownerSnap.exists) {
+      throw new Error("Business Logic Error: Business owner not found.");
+    }
+
     const updates: Array<{
       productRef: FirebaseFirestore.DocumentReference;
       variantRef: FirebaseFirestore.DocumentReference;
@@ -803,23 +810,26 @@ export const createCashierPosSaleRepo = async (
 
     const orderRef = cashierRef.collection("orders").doc();
     transaction.set(orderRef, {
-      orderNumber: order.orderNumber,
-      subtotal: order.subtotal,
-      tax: order.tax,
-      discount: order.discount,
       total: order.total,
-      orderType: order.orderType || "Dine In",
-      tableId: order.tableId || null,
-      customerName: order.customerName || "",
-      promoCode: order.promoCode || "",
-      notes: order.notes || "",
-      type: "sold",
       executorType: "cashier",
       executorId: cashierEmail,
       products: items,
       createdAt: now,
       updatedAt: now,
-      status: "completed",
+    });
+
+    const ownerOrderRef = ownerRef.collection("orders").doc(orderRef.id);
+    transaction.set(ownerOrderRef, {
+      status: "complete",
+      ownerProductAccess: true,
+      ownerProductAccessAt: null,
+      createdAt: now,
+      updatedAt: now,
+      executorType: "cashier",
+      executorId: cashierEmail,
+      type: "sold",
+      products: items,
+      total: order.total,
     });
 
     return {

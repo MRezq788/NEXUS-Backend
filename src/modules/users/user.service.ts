@@ -276,11 +276,8 @@ export const createCashierPosSaleService = async (
     }
   }
 
-  if (!order?.orderNumber) {
-    throw new Error("Business Logic Error: orderNumber is required.");
-  }
 
-  if (typeof order.total !== "number" || order.total < 0) {
+  if (!Number.isFinite(order.total) || order.total < 0) {
     throw new Error("Business Logic Error: total must be a non-negative number.");
   }
 
