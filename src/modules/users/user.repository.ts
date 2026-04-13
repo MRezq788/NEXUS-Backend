@@ -23,6 +23,41 @@ export interface CreateCashierData {
   businessOwnerId: string;
 }
 
+export interface OwnerStoreRecord {
+  siteName: string;
+  owner: string;
+  store?: Record<string, unknown>;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface OwnerProductVariantRecord {
+  id: string;
+  quantity: number;
+  price?: number;
+  [key: string]: unknown;
+}
+
+export interface OwnerProductRecord {
+  id: string;
+  name?: string;
+  description?: string;
+  basePrice?: number;
+  category?: string;
+  images?: string[];
+  attributes?: Array<Record<string, unknown>>;
+  active?: boolean;
+  variants: OwnerProductVariantRecord[];
+  [key: string]: unknown;
+}
+
+export interface StoreProductAllocationInput {
+  siteName: string;
+  productId: string;
+  variantId: string;
+  quantity: number;
+}
+
 export interface AllocationInventoryInput {
   cashierId: string;
   productId: string;
@@ -228,6 +263,297 @@ export const getOwnerSites = async (userId: string) => {
   const sitesRef = db.collection("users").doc(userId);
   const snapshot = await sitesRef.get();
   return snapshot.data()?.siteIds || [];
+};
+
+export const getBusinessOwnerStoresRepo = async (
+  ownerEmail: string,
+): Promise<OwnerStoreRecord[]> => {
+  const ownerSites = await getOwnerSites(ownerEmail);
+  if (!Array.isArray(ownerSites) || ownerSites.length === 0) {
+    return [];
+  }
+
+  const siteSnapshots = await Promise.all(
+    ownerSites.map((siteName: string) => db.collection("sites").doc(siteName).get()),
+  );
+
+  return siteSnapshots
+    .filter((siteSnap) => siteSnap.exists)
+    .map((siteSnap) => ({
+      siteName: siteSnap.id,
+      ...(siteSnap.data() as Record<string, unknown>),
+    })) as OwnerStoreRecord[];
+};
+
+export const createBusinessOwnerStoreRepo = async (
+  ownerEmail: string,
+  siteName: string,
+  storeDisplayName?: string,
+): Promise<OwnerStoreRecord> => {
+  const userRef = usersCollection.doc(ownerEmail);
+  const siteRef = db.collection("sites").doc(siteName);
+
+  return db.runTransaction(async (transaction) => {
+    const [userSnap, siteSnap] = await Promise.all([
+      transaction.get(userRef),
+      transaction.get(siteRef),
+    ]);
+
+    if (!userSnap.exists) {
+      throw new Error("Business Logic Error: Business owner not found.");
+    }
+
+    const userData = userSnap.data() || {};
+    if (userData.role !== "business_owner") {
+      throw new Error("Business Logic Error: Only business owners can create stores.");
+    }
+
+    if (siteSnap.exists) {
+      const siteData = siteSnap.data() || {};
+      if (siteData.owner && siteData.owner !== ownerEmail) {
+        throw new Error("Business Logic Error: Store name is already taken.");
+      }
+    }
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    transaction.set(
+      siteRef,
+      {
+        owner: ownerEmail,
+        store: {
+          siteName,
+          name: storeDisplayName || siteName,
+          currency: "EGP",
+          shippingFee: 75,
+        },
+        updatedAt: now,
+        ...(siteSnap.exists ? {} : { createdAt: now }),
+      },
+      { merge: true },
+    );
+
+    transaction.set(
+      userRef,
+      {
+        siteIds: admin.firestore.FieldValue.arrayUnion(siteName),
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+
+    return {
+      siteName,
+      owner: ownerEmail,
+      store: {
+        siteName,
+        name: storeDisplayName || siteName,
+        currency: "EGP",
+        shippingFee: 75,
+      },
+    };
+  });
+};
+
+export const getOwnerProductsForStoreAllocationRepo = async (
+  ownerEmail: string,
+): Promise<OwnerProductRecord[]> => {
+  const productsSnap = await usersCollection
+    .doc(ownerEmail)
+    .collection("products")
+    .orderBy("createdAt", "desc")
+    .get();
+
+  const products = await Promise.all(
+    productsSnap.docs.map(async (productDoc) => {
+      const productData = productDoc.data();
+      const variantsSnap = await productDoc.ref.collection("variants").get();
+      const variants = variantsSnap.docs.map((variantDoc) => ({
+        id: variantDoc.id,
+        ...(variantDoc.data() as Record<string, unknown>),
+        quantity: Number(variantDoc.data().quantity) || 0,
+      })) as OwnerProductVariantRecord[];
+
+      return {
+        id: productDoc.id,
+        ...(productData as Record<string, unknown>),
+        variants,
+      } as OwnerProductRecord;
+    }),
+  );
+
+  return products;
+};
+
+export const getStoreAllocatedProductsRepo = async (
+  ownerEmail: string,
+  siteName: string,
+): Promise<OwnerProductRecord[]> => {
+  const siteRef = db.collection("sites").doc(siteName);
+  const siteSnap = await siteRef.get();
+
+  if (!siteSnap.exists) {
+    throw new Error("Business Logic Error: Store not found.");
+  }
+
+  const siteData = siteSnap.data() || {};
+  if (siteData.owner !== ownerEmail) {
+    throw new Error("Business Logic Error: You can only access your own store allocations.");
+  }
+
+  const allocatedProductsSnap = await siteRef.collection("allocatedProducts").get();
+  const products = await Promise.all(
+    allocatedProductsSnap.docs.map(async (productDoc) => {
+      const productData = productDoc.data();
+      const variantsSnap = await productDoc.ref.collection("variants").get();
+      const variants = variantsSnap.docs.map((variantDoc) => ({
+        id: variantDoc.id,
+        ...(variantDoc.data() as Record<string, unknown>),
+        quantity: Number(variantDoc.data().quantity) || 0,
+      })) as OwnerProductVariantRecord[];
+
+      return {
+        id: productDoc.id,
+        ...(productData as Record<string, unknown>),
+        variants,
+      } as OwnerProductRecord;
+    }),
+  );
+
+  return products;
+};
+
+export const allocateProductToStoreRepo = async (
+  ownerEmail: string,
+  payload: StoreProductAllocationInput,
+) => {
+  const { siteName, productId, variantId, quantity } = payload;
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  return db.runTransaction(async (transaction) => {
+    const ownerRef = usersCollection.doc(ownerEmail);
+    const siteRef = db.collection("sites").doc(siteName);
+    const ownerProductRef = ownerRef.collection("products").doc(productId);
+    const ownerVariantRef = ownerProductRef.collection("variants").doc(variantId);
+    const siteProductRef = siteRef.collection("allocatedProducts").doc(productId);
+    const siteVariantRef = siteProductRef.collection("variants").doc(variantId);
+
+    const [
+      ownerSnap,
+      siteSnap,
+      ownerProductSnap,
+      ownerVariantSnap,
+      siteProductSnap,
+      siteVariantSnap,
+      ownerVariantsSnap,
+      siteVariantsSnap,
+    ] = await Promise.all([
+      transaction.get(ownerRef),
+      transaction.get(siteRef),
+      transaction.get(ownerProductRef),
+      transaction.get(ownerVariantRef),
+      transaction.get(siteProductRef),
+      transaction.get(siteVariantRef),
+      transaction.get(ownerProductRef.collection("variants")),
+      transaction.get(siteProductRef.collection("variants")),
+    ]);
+
+    if (!ownerSnap.exists) {
+      throw new Error("Business Logic Error: Business owner not found.");
+    }
+
+    if (!siteSnap.exists) {
+      throw new Error("Business Logic Error: Store not found.");
+    }
+
+    const siteData = siteSnap.data() || {};
+    if (siteData.owner !== ownerEmail) {
+      throw new Error("Business Logic Error: You can only allocate to your own stores.");
+    }
+
+    if (!ownerProductSnap.exists) {
+      throw new Error("Business Logic Error: Product not found in owner inventory.");
+    }
+
+    if (!ownerVariantSnap.exists) {
+      throw new Error("Business Logic Error: Variant not found in owner inventory.");
+    }
+
+    const ownerProductData = ownerProductSnap.data() || {};
+    const ownerVariantData = ownerVariantSnap.data() || {};
+    const ownerVariantQuantity = Number(ownerVariantData.quantity) || 0;
+
+    if (ownerVariantQuantity < quantity) {
+      throw new Error("Business Logic Error: Allocated quantity exceeds available owner stock.");
+    }
+
+    const nextOwnerVariantQuantity = ownerVariantQuantity - quantity;
+    const ownerRemainingProductQuantity = ownerVariantsSnap.docs.reduce((sum, doc) => {
+      const currentQuantity = Number(doc.data().quantity) || 0;
+      return sum + (doc.id === variantId ? nextOwnerVariantQuantity : currentQuantity);
+    }, 0);
+
+    const existingSiteVariantQuantity = siteVariantSnap.exists
+      ? Number(siteVariantSnap.data()?.quantity) || 0
+      : 0;
+    const nextSiteVariantQuantity = existingSiteVariantQuantity + quantity;
+    const siteProductQuantity = siteVariantsSnap.docs.reduce((sum, doc) => {
+      const currentQuantity = Number(doc.data().quantity) || 0;
+      return sum + (doc.id === variantId ? nextSiteVariantQuantity : currentQuantity);
+    }, siteVariantSnap.exists ? 0 : quantity);
+
+    transaction.set(
+      siteProductRef,
+      {
+        ...(ownerProductData as Record<string, unknown>),
+        allocatedBy: ownerEmail,
+        sourceOwnerId: ownerEmail,
+        sourceProductId: productId,
+        sourceProductRef: ownerProductRef.path,
+        updatedAt: now,
+        ...(siteProductSnap.exists ? {} : { createdAt: now }),
+      },
+      { merge: true },
+    );
+
+    transaction.set(
+      siteVariantRef,
+      {
+        ...(ownerVariantData as Record<string, unknown>),
+        quantity: nextSiteVariantQuantity,
+        sourceOwnerId: ownerEmail,
+        sourceProductId: productId,
+        sourceVariantId: variantId,
+        sourceVariantRef: ownerVariantRef.path,
+        updatedAt: now,
+        ...(siteVariantSnap.exists ? {} : { createdAt: now }),
+      },
+      { merge: true },
+    );
+
+    transaction.update(ownerVariantRef, {
+      quantity: nextOwnerVariantQuantity,
+      updatedAt: now,
+    });
+
+    transaction.set(
+      ownerProductRef,
+      {
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+
+    return {
+      siteName,
+      productId,
+      variantId,
+      allocatedQuantity: quantity,
+      ownerRemainingVariantQuantity: nextOwnerVariantQuantity,
+      ownerRemainingProductQuantity,
+      siteVariantQuantity: nextSiteVariantQuantity,
+      siteProductQuantity,
+    };
+  });
 };
 
 export const userRole = async (userId: string) => {
