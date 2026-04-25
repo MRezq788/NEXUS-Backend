@@ -1,6 +1,5 @@
-import { collection, doc, writeBatch, Timestamp } from "firebase/firestore";
-
-import { db } from "../../core/config/clientFirebase";
+import * as admin from "firebase-admin";
+import { adminDb } from "../../core/config/adminFirebase";
 
 const USERS_COLLECTION = "users";
 const ORDERS_SUBCOLLECTION = "orders";
@@ -23,40 +22,36 @@ interface IncomingOrder {
 }
 
 export const createOrdersRepo = async (orders: IncomingOrder[]) => {
-  const batch = writeBatch(db);
+  // Use Admin SDK batch
+  const batch = adminDb.batch();
 
   orders.forEach((order) => {
     const { buyerEmail, sellerEmail, products, total } = order;
 
     // 🔹 Generate ONE shared order ID
-    const buyerOrdersCollectionRef = collection(
-      db,
-      USERS_COLLECTION,
-      buyerEmail,
-      ORDERS_SUBCOLLECTION,
-    );
+    const buyerOrdersCollectionRef = adminDb
+      .collection(USERS_COLLECTION)
+      .doc(buyerEmail)
+      .collection(ORDERS_SUBCOLLECTION);
 
-    const orderDocRef = doc(buyerOrdersCollectionRef); // auto ID
+    const orderDocRef = buyerOrdersCollectionRef.doc(); // auto ID
     const orderId = orderDocRef.id;
 
     // 🔹 References for both buyer and seller using SAME ID
-    const buyerOrderRef = doc(
-      db,
-      USERS_COLLECTION,
-      buyerEmail,
-      ORDERS_SUBCOLLECTION,
-      orderId,
-    );
+    const buyerOrderRef = adminDb
+      .collection(USERS_COLLECTION)
+      .doc(buyerEmail)
+      .collection(ORDERS_SUBCOLLECTION)
+      .doc(orderId);
 
-    const sellerOrderRef = doc(
-      db,
-      USERS_COLLECTION,
-      sellerEmail,
-      ORDERS_SUBCOLLECTION,
-      orderId,
-    );
+    const sellerOrderRef = adminDb
+      .collection(USERS_COLLECTION)
+      .doc(sellerEmail)
+      .collection(ORDERS_SUBCOLLECTION)
+      .doc(orderId);
 
-    const now = Timestamp.now();
+    // Use server timestamp for absolute precision
+    const now = admin.firestore.FieldValue.serverTimestamp();
 
     // 🔹 Seller Order Object (Warehouse)
     const sellerOrder = {
@@ -99,36 +94,31 @@ export const createSingleOrderRepo = async (
 ): Promise<string> => {
   const { buyerEmail, sellerEmail, products, total } = order;
 
-  const batch = writeBatch(db);
+  // Use Admin SDK batch
+  const batch = adminDb.batch();
 
   // 🔹 Generate shared order ID
-  const buyerOrdersCollectionRef = collection(
-    db,
-    USERS_COLLECTION,
-    buyerEmail,
-    ORDERS_SUBCOLLECTION,
-  );
+  const buyerOrdersCollectionRef = adminDb
+    .collection(USERS_COLLECTION)
+    .doc(buyerEmail)
+    .collection(ORDERS_SUBCOLLECTION);
 
-  const generatedDocRef = doc(buyerOrdersCollectionRef);
+  const generatedDocRef = buyerOrdersCollectionRef.doc();
   const orderId = generatedDocRef.id;
 
-  const buyerOrderRef = doc(
-    db,
-    USERS_COLLECTION,
-    buyerEmail,
-    ORDERS_SUBCOLLECTION,
-    orderId,
-  );
+  const buyerOrderRef = adminDb
+    .collection(USERS_COLLECTION)
+    .doc(buyerEmail)
+    .collection(ORDERS_SUBCOLLECTION)
+    .doc(orderId);
 
-  const sellerOrderRef = doc(
-    db,
-    USERS_COLLECTION,
-    sellerEmail,
-    ORDERS_SUBCOLLECTION,
-    orderId,
-  );
+  const sellerOrderRef = adminDb
+    .collection(USERS_COLLECTION)
+    .doc(sellerEmail)
+    .collection(ORDERS_SUBCOLLECTION)
+    .doc(orderId);
 
-  const now = Timestamp.now();
+  const now = admin.firestore.FieldValue.serverTimestamp();
 
   // 🔹 Seller Order (Warehouse)
   const sellerOrder = {

@@ -1,32 +1,17 @@
-import {
-  collection,
-  doc,
-  getDocs,
-  getDoc,
-  updateDoc,
-  query,
-  where,
-  orderBy,
-  writeBatch,
-  getCountFromServer,
-  DocumentSnapshot,
-  DocumentData,
-} from 'firebase/firestore';
-import { db } from '../../core/config/clientFirebase';
+import * as admin from 'firebase-admin';
+import { adminDb } from '../../core/config/adminFirebase';
 import { Product, ProductVariant, ProductStatus, computeStatus, formatDate } from './warehouse.product.model';
 
 // Get user's products subcollection reference
 function getUserProductsCollection(userEmail: string) {
-  const userDoc = doc(db, 'users', userEmail);
-  return collection(userDoc, 'products');
+  return adminDb.collection('users').doc(userEmail).collection('products');
 }
 
 export class ProductRepository {
   // Verify user exists
   async verifyUser(userEmail: string): Promise<boolean> {
-    const userDoc = doc(db, 'users', userEmail);
-    const snapshot = await getDoc(userDoc);
-    return snapshot.exists();
+    const userDoc = await adminDb.collection('users').doc(userEmail).get();
+    return userDoc.exists;
   }
 
   // Get paginated products with optional filtering
@@ -46,21 +31,19 @@ export class ProductRepository {
     const productsRef = getUserProductsCollection(userEmail);
     
     // Build base query
-    let constraints: any[] = [orderBy('createdAt', 'desc')];
+    let q: admin.firestore.Query = productsRef.orderBy('createdAt', 'desc');
     
     // Add status filter if specified
     if (status && status !== 'All') {
-      constraints.push(where('status', '==', status));
+      q = q.where('status', '==', status);
     }
 
-    // Get total count
-    const countQuery = query(productsRef, ...constraints);
-    const countSnapshot = await getCountFromServer(countQuery);
+    // Get total count using Admin SDK
+    const countSnapshot = await q.count().get();
     const total = countSnapshot.data().count;
 
     // Fetch all and apply search/pagination in memory
-    const q = query(productsRef, ...constraints);
-    const snapshot = await getDocs(q);
+    const snapshot = await q.get();
     
     let products: Product[] = [];
     
@@ -93,13 +76,13 @@ export class ProductRepository {
     const userExists = await this.verifyUser(userEmail);
     if (!userExists) throw new Error('User not found');
 
-    const productDoc = doc(getUserProductsCollection(userEmail), id);
-    const snapshot = await getDoc(productDoc);
+    const productDoc = getUserProductsCollection(userEmail).doc(id);
+    const snapshot = await productDoc.get();
 
-    if (!snapshot.exists()) return null;
+    if (!snapshot.exists) return null;
 
-    const variantsRef = collection(productDoc, 'variants');
-    const variantsSnap = await getDocs(variantsRef);
+    const variantsRef = productDoc.collection('variants');
+    const variantsSnap = await variantsRef.get();
     const variants: ProductVariant[] = variantsSnap.docs.map((vDoc) => {
       const vData = vDoc.data();
       if (vData.attributes) {
@@ -140,14 +123,14 @@ export class ProductRepository {
     if (productData.active !== undefined) data.active = productData.active;
 
     const productsRef = getUserProductsCollection(userEmail);
-    const batch = writeBatch(db);
-    const productDocRef = doc(productsRef); // auto-ID for the product
+    const batch = adminDb.batch();
+    const productDocRef = productsRef.doc(); // auto-ID for the product
     batch.set(productDocRef, data);
 
     // Create variants subcollection if provided
     if (Array.isArray(productData.variants) && productData.variants.length > 0) {
       for (const variant of productData.variants) {
-        const variantRef = doc(collection(productDocRef, 'variants')); // auto-ID
+        const variantRef = productDocRef.collection('variants').doc(); // auto-ID
         const { price, quantity, attributes, ...rest } = variant;
         batch.set(variantRef, {
           ...(attributes || {}),
@@ -174,10 +157,10 @@ export class ProductRepository {
     const userExists = await this.verifyUser(userEmail);
     if (!userExists) throw new Error('User not found');
 
-    const productDoc = doc(getUserProductsCollection(userEmail), id);
-    const existing = await getDoc(productDoc);
+    const productDoc = getUserProductsCollection(userEmail).doc(id);
+    const existing = await productDoc.get();
 
-    if (!existing.exists()) return null;
+    if (!existing.exists) return null;
 
     const now = new Date();
     const updates: any = {
@@ -204,13 +187,13 @@ export class ProductRepository {
       updates.status   = computeStatus(productData.quantity);
     }
 
-    const batch = writeBatch(db);
+    const batch = adminDb.batch();
     batch.update(productDoc, updates);
 
     // Update variants subcollection while preserving stable variant IDs
     if (Array.isArray(productData.variants)) {
-      const variantsRef = collection(productDoc, 'variants');
-      const existingVariants = await getDocs(variantsRef);
+      const variantsRef = productDoc.collection('variants');
+      const existingVariants = await variantsRef.get();
 
       const incomingVariantIds = new Set<string>();
 
@@ -219,10 +202,10 @@ export class ProductRepository {
         const variantId =
           typeof incomingId === 'string' && incomingId.trim().length > 0
             ? incomingId
-            : doc(variantsRef).id;
+            : variantsRef.doc().id;
         incomingVariantIds.add(variantId);
 
-        const variantRef = doc(variantsRef, variantId);
+        const variantRef = variantsRef.doc(variantId);
         batch.set(variantRef, {
           ...(attributes || {}),
           ...rest,
@@ -242,8 +225,8 @@ export class ProductRepository {
     await batch.commit();
 
     // Re-fetch with variants
-    const updated = await getDoc(productDoc);
-    const variantsSnap = await getDocs(collection(productDoc, 'variants'));
+    const updated = await productDoc.get();
+    const variantsSnap = await productDoc.collection('variants').get();
     const variants: ProductVariant[] = variantsSnap.docs.map((vDoc) => {
       const vData = vDoc.data();
       if (vData.attributes) {
@@ -262,12 +245,12 @@ export class ProductRepository {
     if (!userExists) throw new Error('User not found');
 
     try {
-      const productDoc = doc(getUserProductsCollection(userEmail), id);
+      const productDoc = getUserProductsCollection(userEmail).doc(id);
 
       // Delete variants subcollection first
-      const variantsRef = collection(productDoc, 'variants');
-      const variantsSnap = await getDocs(variantsRef);
-      const batch = writeBatch(db);
+      const variantsRef = productDoc.collection('variants');
+      const variantsSnap = await variantsRef.get();
+      const batch = adminDb.batch();
       variantsSnap.forEach((vDoc) => batch.delete(vDoc.ref));
       batch.delete(productDoc);
       await batch.commit();
@@ -283,15 +266,15 @@ export class ProductRepository {
     const userExists = await this.verifyUser(userEmail);
     if (!userExists) throw new Error('User not found');
 
-    const batch = writeBatch(db);
+    const batch = adminDb.batch();
     let count = 0;
 
     for (const id of ids) {
-      const productDoc = doc(getUserProductsCollection(userEmail), id);
+      const productDoc = getUserProductsCollection(userEmail).doc(id);
 
       // Delete variants subcollection docs
-      const variantsRef = collection(productDoc, 'variants');
-      const variantsSnap = await getDocs(variantsRef);
+      const variantsRef = productDoc.collection('variants');
+      const variantsSnap = await variantsRef.get();
       variantsSnap.forEach((vDoc) => batch.delete(vDoc.ref));
 
       batch.delete(productDoc);
@@ -308,7 +291,7 @@ export class ProductRepository {
     if (!userExists) throw new Error('User not found');
 
     const productsRef = getUserProductsCollection(userEmail);
-    const snapshot = await getDocs(productsRef);
+    const snapshot = await productsRef.get();
     
     let total = 0;
     let inStock = 0;
@@ -327,13 +310,13 @@ export class ProductRepository {
   // Safely convert a Firestore Timestamp, Date, ISO string, or null to a Date
   private toDate(value: any): Date | null {
     if (!value) return null;
-    if (typeof value.toDate === 'function') return value.toDate(); // Firestore Timestamp
+    if (typeof value.toDate === 'function') return value.toDate(); // Admin SDK Timestamp
     const d = new Date(value);
     return isNaN(d.getTime()) ? null : d;
   }
 
   // Format Firestore document to Product
-  private formatProduct(doc: DocumentSnapshot<DocumentData>, variants?: ProductVariant[]): Product {
+  private formatProduct(doc: admin.firestore.DocumentSnapshot, variants?: ProductVariant[]): Product {
     const data = doc.data()!;
     const createdDate     = this.toDate(data.createdAt);
     const updatedDate     = this.toDate(data.updatedAt);

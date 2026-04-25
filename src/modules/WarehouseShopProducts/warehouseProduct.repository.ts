@@ -1,15 +1,4 @@
-import {
-  collection,
-  query,
-  where,
-  orderBy,
-  limit as limitFn,
-  startAfter as startAfterFn,
-  getDocs,
-  QueryConstraint,
-} from "firebase/firestore";
-
-import { db } from "../../core/config/clientFirebase";
+import { adminDb } from "../../core/config/adminFirebase";
 
 const COLLECTION_NAME = "users";
 const SUBCOLLECTION_NAME = "products";
@@ -28,41 +17,46 @@ export const getProduct = async ({
   search,
 }: RepoParams) => {
   try {
-    const constraints: QueryConstraint[] = [];
+    // 1. Start the query using the Admin SDK syntax
+    let q: FirebaseFirestore.Query = adminDb
+      .collection(COLLECTION_NAME)
+      .doc(email)
+      .collection(SUBCOLLECTION_NAME);
 
+    // 2. Apply search and sorting
     if (search) {
       const end = search + "\uf8ff";
-      constraints.push(where("name", ">=", search));
-      constraints.push(where("name", "<=", end));
+      q = q.where("name", ">=", search).where("name", "<=", end);
+      
+      // CRITICAL: When using >= or <= on 'name', your first orderBy MUST be 'name'
+      q = q.orderBy("name");
+      q = q.orderBy("createdAt", "desc");
+    } else {
+      q = q.orderBy("createdAt", "desc");
     }
-
-    constraints.push(orderBy("createdAt", "desc"));
 
     if (startAfter) {
-      constraints.push(startAfterFn(startAfter));
+      q = q.startAfter(startAfter);
     }
 
-    constraints.push(limitFn(limit));
+    q = q.limit(limit);
 
-    const q = query(
-      collection(db, COLLECTION_NAME, email, SUBCOLLECTION_NAME),
-      ...constraints,
-    );
-
-    const snapshot = await getDocs(q);
+    // 3. Execute the query using .get() instead of getDocs()
+    const snapshot = await q.get();
 
     const results = await Promise.all(
       snapshot.docs.map(async (productDoc) => {
         const data = productDoc.data();
-        const variantsRef = collection(
-          db,
-          COLLECTION_NAME,
-          email,
-          SUBCOLLECTION_NAME,
-          productDoc.id,
-          "variants",
-        );
-        const variantsSnap = await getDocs(variantsRef);
+        
+        // 4. Fetch variants using the Admin SDK
+        const variantsRef = adminDb
+          .collection(COLLECTION_NAME)
+          .doc(email)
+          .collection(SUBCOLLECTION_NAME)
+          .doc(productDoc.id)
+          .collection("variants");
+          
+        const variantsSnap = await variantsRef.get();
         const variants = variantsSnap.docs.map((variantDoc) => ({
           id: variantDoc.id,
           ...(variantDoc.data() as Record<string, unknown>),
@@ -114,7 +108,7 @@ export const getProduct = async ({
 
     return results.filter(Boolean) as any[];
   } catch (err) {
-    console.error("Firestore query failed:", err);
+    console.error("Firestore Admin SDK query failed:", err);
     throw new Error("Failed to query Firestore");
   }
 };
