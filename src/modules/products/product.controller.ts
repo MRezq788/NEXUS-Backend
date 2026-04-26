@@ -2,6 +2,7 @@ import { Response } from "express";
 import { AuthRequest } from "../../core/middleware/auth.middleware";
 import { createProductService, getProductsService } from './product.service';
 import { successResponse, errorResponse, paginatedResponse } from "../../core/utils/response";
+import { getInventoryStatsService } from './product.service';
 
 export const createProductController = async (
   req: AuthRequest,
@@ -66,5 +67,26 @@ export const getProductsController = async (
   } catch (error: any) {
     console.error("Get Products Error:", error);
     return errorResponse(res, error.message ?? "Failed to fetch products", 500);
+  }
+};
+
+export const getInventoryStatsController = async (
+  req: AuthRequest,
+  res: Response
+) => {
+  try {
+    const userId =
+      (req.headers["x-user-email"] as string) || req.user?.uid;
+
+    if (!userId) {
+      return errorResponse(res, "Unauthorized", 401);
+    }
+
+    const stats = await getInventoryStatsService(userId);
+
+    return successResponse(res, stats, "Inventory stats fetched successfully");
+  } catch (error: any) {
+    console.error("Get Inventory Stats Error:", error);
+    return errorResponse(res, error.message ?? "Failed to fetch inventory stats", 500);
   }
 };
