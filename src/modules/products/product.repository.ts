@@ -360,3 +360,92 @@ export const getInventoryStatsRepo = async (
     totalInventoryValue,
   };
 };
+
+// Add this interface if not already present
+export interface WarehouseProduct {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  basePrice?: number;
+  quantity: number;
+  unit: string;
+  category: string;
+  images: string[];
+  warehouseEmail: string;
+  warehouseName: string;
+  variants?: { id: string; price: number; quantity: number; [key: string]: any }[];
+}
+
+// Add this function to fetch ALL products from ALL warehouses
+export const getAllWarehouseProductsRepo = async (): Promise<WarehouseProduct[]> => {
+  // Query only warehouse users — Firestore index handles the filtering
+  const warehousesSnap = await db
+    .collection('users')
+    .where('role', '==', 'warehouse')
+    .get();
+
+  const allProducts: WarehouseProduct[] = [];
+
+  await Promise.all(
+    warehousesSnap.docs.map(async (userDoc) => {
+      const userData = userDoc.data();
+      const warehouseName = userData.name || userDoc.id;
+      const warehouseEmail = userData.email || userDoc.id;
+
+      const productsRef = userDoc.ref.collection('products');
+      const productsSnap = await productsRef.get();
+
+      await Promise.all(
+        productsSnap.docs.map(async (productDoc) => {
+          const data = productDoc.data();
+
+          // Get product-level attributes definition
+          const productAttributes = Array.isArray(data.attributes)
+            ? data.attributes
+            : [];
+
+          // Fetch variants subcollection
+          const variantsSnap = await productDoc.ref.collection('variants').get();
+          const variants = variantsSnap.docs.map((vDoc) => {
+            const vData = vDoc.data();
+
+            // Build attributes object from product attribute names + variant values
+            const attributes: Record<string, string> = {};
+            for (const attrDef of productAttributes) {
+              const attrName = attrDef.name;
+              if (attrName && vData[attrName] !== undefined) {
+                attributes[attrName] = String(vData[attrName]);
+              }
+            }
+
+            return {
+              id: vDoc.id,
+              quantity: Number(vData.quantity || 0),
+              price: Number(vData.price || 0),
+              attributes,
+              ...vData,
+            };
+          });
+
+          allProducts.push({
+            id: productDoc.id,
+            name: data.name || '',
+            description: data.description || '',
+            price: Number(data.price || data.basePrice || 0),
+            basePrice: Number(data.basePrice || 0),
+            quantity: Number(data.quantity || 0),
+            unit: data.unit || 'unit',
+            category: data.category || '',
+            images: Array.isArray(data.images) ? data.images : [],
+            warehouseEmail,
+            warehouseName,
+            variants: variants.length > 0 ? variants : undefined,
+          });
+        })
+      );
+    })
+  );
+
+  return allProducts;
+};

@@ -1,7 +1,7 @@
 import { createProductRepo, getProductsRepo, CreateProductInput, ProductWithVariants } from './product.repository';
 import { getPaginationParams, createPaginatedResult, PaginatedResult } from '../../core/utils/pagination';
 import { getInventoryStatsRepo, InventoryStats } from './product.repository';
-
+import { getAllWarehouseProductsRepo, WarehouseProduct } from './product.repository';
 
 export const createProductService = async (
   userId: string,
@@ -52,4 +52,7 @@ export const getInventoryStatsService = async (
   return await getInventoryStatsRepo(userId);
 };
 
+export const getRecommendationsService = async (): Promise<WarehouseProduct[]> => {
+  return await getAllWarehouseProductsRepo();
+};
 
