@@ -1,5 +1,7 @@
 import { admin } from '../../core/config/firebase';
 import { FieldValue } from 'firebase-admin/firestore';
+import { syncProductEmbedding } from './product.embedding';
+
 
 const db = admin.firestore();
 
@@ -245,6 +247,17 @@ export const createProductRepo = async (
   }
 
   await batch.commit();
+
+  // Sync embedding to Supabase
+  syncProductEmbedding(userId, {
+    id: productId,
+    name: input.name,
+    description: input.description,
+    category: input.category,
+    attributes: input.attributes,
+  }).catch((err) => {
+    console.error('Embedding sync failed (non-blocking):', err);
+  });
 
   return productId;
 };

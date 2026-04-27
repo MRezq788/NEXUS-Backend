@@ -95,7 +95,12 @@ export const getInventoryStatsController = async (
 
 export const getRecommendationsController = async (req: AuthRequest, res: Response) => {
   try {
-    const products = await getRecommendationsService();
+    const userId = (req.headers["x-user-email"] as string) || req.user?.uid;
+    if (!userId) {
+      return errorResponse(res, "Unauthorized", 401);
+    }
+
+    const products = await getRecommendationsService(userId);
     return successResponse(res, products, "Recommendations fetched successfully");
   } catch (error: any) {
     console.error("Get Recommendations Error:", error);
