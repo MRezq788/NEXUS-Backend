@@ -247,17 +247,20 @@ export const createProductRepo = async (
   }
 
   await batch.commit();
-
-  // Sync embedding to Supabase
-  syncProductEmbedding(userId, {
-    id: productId,
-    name: input.name,
-    description: input.description,
-    category: input.category,
-    attributes: input.attributes,
-  }).catch((err) => {
-    console.error('Embedding sync failed (non-blocking):', err);
-  });
+  const userRef = db.collection('users').doc(userId);
+  const userSnap = await userRef.get();
+  if (userSnap.data()?.role === 'warehouse') {
+    // Sync embedding to Supabase
+    syncProductEmbedding(userId, {
+      id: productId,
+      name: input.name,
+      description: input.description,
+      category: input.category,
+      attributes: input.attributes,
+    }).catch((err) => {
+      console.error('Embedding sync failed (non-blocking):', err);
+    });
+  }
 
   return productId;
 };

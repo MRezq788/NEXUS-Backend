@@ -365,112 +365,222 @@ export class OrderService {
     const buyerExists = await orderRepository.verifyUser(buyerEmail);
     if (!buyerExists) throw new Error("Buyer user not found");
 
-    const buyerProducts = await productRepository.findAll(buyerEmail, 1, 1000);
-
+    // 🔹 GROUP order items by productId to process each product once
+    const groupedByProduct = new Map<string, typeof order.products>();
     for (const item of order.products) {
+      if (!groupedByProduct.has(item.productId)) {
+        groupedByProduct.set(item.productId, []);
+      }
+      groupedByProduct.get(item.productId)!.push(item);
+    }
+
+    // 🔹 Fetch buyer's existing products once
+    const buyerProducts = await productRepository.findAll(buyerEmail, 1, 1000);
+    const existingProductsByName = new Map<string, Product>();
+    for (const p of buyerProducts.products) {
+      const fullProduct = await productRepository.findById(buyerEmail, p.id);
+      if (fullProduct) {
+        existingProductsByName.set(fullProduct.name.toLowerCase(), fullProduct);
+      }
+    }
+
+    // 🔹 Process each unique product
+    for (const [productId, items] of groupedByProduct) {
       try {
-        const originalProduct = await productRepository.findById(sellerEmail, item.productId);
+        const originalProduct = await productRepository.findById(sellerEmail, productId);
         if (!originalProduct) continue;
 
-        const foundProductSummary = buyerProducts.products.find(
-          (p) => p.name.toLowerCase() === originalProduct.name.toLowerCase(),
-        );
-
-        // FIX: Fetch the FULL product (with variants) to prevent overwriting
-        let existingProduct: Product | null = null;
-        if (foundProductSummary) {
-          existingProduct = await productRepository.findById(buyerEmail, foundProductSummary.id);
-        }
-
         const basePrice = Number(originalProduct.basePrice ?? originalProduct.price ?? 0);
-        const sourceVariant = item.variantId
-          ? (originalProduct.variants || []).find((v) => v.id === item.variantId)
-          : undefined;
-
-        const { id: _i, price: _p, quantity: _q, ...sourceVariantAttributes } = sourceVariant || {};
-        const selectedVariantAttributes: Record<string, string> = item.variantAttributes || (sourceVariantAttributes as any) || {};
-        const selectedVariantPrice = Number(sourceVariant?.price ?? item.price ?? basePrice);
-        const hasSelectedAttributes = Object.keys(selectedVariantAttributes).length > 0;
+        const existingProduct = existingProductsByName.get(originalProduct.name.toLowerCase());
 
         if (existingProduct) {
-          const existingVariants = Array.isArray(existingProduct.variants) ? [...existingProduct.variants] : [];
-          const hasExistingVariants = existingVariants.length > 0;
+          // ── Product exists: merge new variants into existing ones ──
+          // Start with a deep copy of all existing variants
+          const mergedVariants: ProductVariant[] = Array.isArray(existingProduct.variants)
+            ? existingProduct.variants.map(v => ({ ...v }))
+            : [];
 
-          if (hasSelectedAttributes || hasExistingVariants) {
-            // Ensure we start with a valid variants list
-            const variants = hasExistingVariants 
-              ? existingVariants 
-              : [{ id: crypto.randomUUID(), price: basePrice, quantity: Number(existingProduct.quantity) || 0 }];
+          // Also track total quantity from existing variants (or product-level quantity if no variants)
+          let totalQuantity = mergedVariants.reduce((sum, v) => sum + (Number(v.quantity) || 0), 0);
 
-            const variantIndex = hasSelectedAttributes
-              ? variants.findIndex((v) => {
-                  const { id: _id, price: _pr, quantity: _qt, ...vAttrs } = v;
-                  return this.attributesMatch(vAttrs as Record<string, string>, selectedVariantAttributes);
-                })
-              : 0;
-
-            if (variantIndex >= 0) {
-              variants[variantIndex] = {
-                ...variants[variantIndex],
-                ...selectedVariantAttributes,
-                price: selectedVariantPrice,
-                quantity: (Number(variants[variantIndex].quantity) || 0) + item.quantity,
-              };
-            } else {
-              variants.push({
-                id: crypto.randomUUID(),
-                ...selectedVariantAttributes,
-                price: selectedVariantPrice,
-                quantity: item.quantity,
-              });
-            }
-
-            const nextQuantity = variants.reduce((sum, v) => sum + (Number(v.quantity) || 0), 0);
-
-            await productRepository.update(buyerEmail, existingProduct.id, {
-              variants,
-              quantity: nextQuantity,
-              attributes: this.mergeAttributeValues(existingProduct.attributes, selectedVariantAttributes),
-              price: basePrice,
-              basePrice,
+          // If product has no variants but has quantity, create a default variant to track it
+          if (mergedVariants.length === 0 && (existingProduct.quantity || 0) > 0) {
+            mergedVariants.push({
+              id: crypto.randomUUID(),
+              price: Number(existingProduct.price) || basePrice,
+              quantity: existingProduct.quantity,
             });
-          } else {
-            // Standard non-variant increment
-            const newQuantity = (Number(existingProduct.quantity) || 0) + item.quantity;
-            await productRepository.update(buyerEmail, existingProduct.id, {
-              quantity: newQuantity,
-              price: basePrice,
-              basePrice,
-              attributes: originalProduct.attributes || [],
-            });
+            totalQuantity = existingProduct.quantity;
           }
-        } else {
-          // Create new product if it doesn't exist
-          const hasProductVariants = Array.isArray(originalProduct.variants) && originalProduct.variants.length > 0;
-          const initialVariants = hasSelectedAttributes
-            ? [{ id: crypto.randomUUID(), ...selectedVariantAttributes, price: selectedVariantPrice, quantity: item.quantity }]
-            : hasProductVariants
-              ? [{ id: crypto.randomUUID(), price: basePrice, quantity: item.quantity }]
+
+          // Track all attributes across all variants (existing + new)
+          const allAttributes = new Map<string, Set<string>>();
+
+          // First: collect attributes from existing variants
+          for (const v of mergedVariants) {
+            const { id: _id, price: _pr, quantity: _qt, ...vAttrs } = v;
+            for (const [key, value] of Object.entries(vAttrs)) {
+              if (!allAttributes.has(key)) allAttributes.set(key, new Set());
+              allAttributes.get(key)!.add(String(value));
+            }
+          }
+
+          // Second: process each ordered item and merge into mergedVariants
+          for (const item of items) {
+            const sourceVariant = item.variantId
+              ? (originalProduct.variants || []).find((v) => v.id === item.variantId)
               : undefined;
 
-          await productRepository.create(buyerEmail, {
+            const { id: _i, price: _p, quantity: _q, ...sourceVariantAttributes } = sourceVariant || {};
+            const selectedVariantAttributes: Record<string, string> = item.variantAttributes || (sourceVariantAttributes as any) || {};
+            const selectedVariantPrice = Number(sourceVariant?.price ?? item.price ?? basePrice);
+            const hasSelectedAttributes = Object.keys(selectedVariantAttributes).length > 0;
+
+            if (hasSelectedAttributes) {
+              // Try to find matching variant by attributes
+              const variantIndex = mergedVariants.findIndex((v) => {
+                const { id: _id, price: _pr, quantity: _qt, ...vAttrs } = v;
+                return this.attributesMatch(vAttrs as Record<string, string>, selectedVariantAttributes);
+              });
+
+              if (variantIndex >= 0) {
+                // Found matching variant: increment quantity
+                mergedVariants[variantIndex] = {
+                  ...mergedVariants[variantIndex],
+                  ...selectedVariantAttributes,
+                  price: selectedVariantPrice,
+                  quantity: (Number(mergedVariants[variantIndex].quantity) || 0) + item.quantity,
+                };
+              } else {
+                // New variant: add it
+                mergedVariants.push({
+                  id: crypto.randomUUID(),
+                  ...selectedVariantAttributes,
+                  price: selectedVariantPrice,
+                  quantity: item.quantity,
+                });
+              }
+
+              // Track attributes
+              for (const [key, value] of Object.entries(selectedVariantAttributes)) {
+                if (!allAttributes.has(key)) allAttributes.set(key, new Set());
+                allAttributes.get(key)!.add(String(value));
+              }
+            } else {
+              // No variant attributes: add to a default variant or create one
+              if (mergedVariants.length > 0) {
+                // Add to first variant
+                mergedVariants[0] = {
+                  ...mergedVariants[0],
+                  quantity: (Number(mergedVariants[0].quantity) || 0) + item.quantity,
+                };
+              } else {
+                mergedVariants.push({
+                  id: crypto.randomUUID(),
+                  price: basePrice,
+                  quantity: item.quantity,
+                });
+              }
+            }
+
+            totalQuantity += item.quantity;
+          }
+
+          // Build final attributes array
+          const mergedAttributes = Array.from(allAttributes.entries()).map(([name, values]) => ({
+            name,
+            values: Array.from(values),
+          }));
+
+          // Update the product once with fully merged variants
+          await productRepository.update(buyerEmail, existingProduct.id, {
+            variants: mergedVariants,
+            quantity: totalQuantity,
+            attributes: mergedAttributes.length > 0 ? mergedAttributes : originalProduct.attributes || [],
+            price: basePrice,
+            basePrice,
+          });
+
+          // Update in map so subsequent products with same name see updated state
+          existingProduct.variants = mergedVariants;
+          existingProduct.quantity = totalQuantity;
+
+        } else {
+          // ── Product doesn't exist: create once with all variants ──
+          const allVariants: any[] = [];
+          const allAttributes = new Map<string, Set<string>>();
+
+          for (const item of items) {
+            const sourceVariant = item.variantId
+              ? (originalProduct.variants || []).find((v) => v.id === item.variantId)
+              : undefined;
+
+            const { id: _i, price: _p, quantity: _q, ...sourceVariantAttributes } = sourceVariant || {};
+            const selectedVariantAttributes: Record<string, string> = item.variantAttributes || (sourceVariantAttributes as any) || {};
+            const selectedVariantPrice = Number(sourceVariant?.price ?? item.price ?? basePrice);
+            const hasSelectedAttributes = Object.keys(selectedVariantAttributes).length > 0;
+
+            if (hasSelectedAttributes) {
+              // Check if variant already exists in allVariants (within this same order)
+              const existingIndex = allVariants.findIndex((v) => {
+                const { id: _id, price: _pr, quantity: _qt, ...vAttrs } = v;
+                return this.attributesMatch(vAttrs as Record<string, string>, selectedVariantAttributes);
+              });
+
+              if (existingIndex >= 0) {
+                allVariants[existingIndex].quantity = (Number(allVariants[existingIndex].quantity) || 0) + item.quantity;
+              } else {
+                allVariants.push({
+                  id: crypto.randomUUID(),
+                  ...selectedVariantAttributes,
+                  price: selectedVariantPrice,
+                  quantity: item.quantity,
+                });
+              }
+
+              for (const [key, value] of Object.entries(selectedVariantAttributes)) {
+                if (!allAttributes.has(key)) allAttributes.set(key, new Set());
+                allAttributes.get(key)!.add(String(value));
+              }
+            } else {
+              // No variant attributes
+              if (allVariants.length > 0) {
+                allVariants[0].quantity = (Number(allVariants[0].quantity) || 0) + item.quantity;
+              } else {
+                allVariants.push({
+                  id: crypto.randomUUID(),
+                  price: basePrice,
+                  quantity: item.quantity,
+                });
+              }
+            }
+          }
+
+          const totalQuantity = allVariants.reduce((sum, v) => sum + (Number(v.quantity) || 0), 0);
+          const mergedAttributes = Array.from(allAttributes.entries()).map(([name, values]) => ({
+            name,
+            values: Array.from(values),
+          }));
+
+          const newProduct = await productRepository.create(buyerEmail, {
             name: originalProduct.name,
-            quantity: item.quantity,
+            quantity: totalQuantity,
             unit: originalProduct.unit,
             price: basePrice,
             basePrice,
             description: originalProduct.description,
             category: originalProduct.category,
             images: originalProduct.images || [],
-            attributes: hasSelectedAttributes 
-              ? this.mergeAttributeValues(originalProduct.attributes, selectedVariantAttributes) 
-              : originalProduct.attributes || [],
-            variants: initialVariants,
+            attributes: mergedAttributes.length > 0 ? mergedAttributes : originalProduct.attributes || [],
+            variants: allVariants.length > 0 ? allVariants : undefined,
             active: true,
           });
+
+          // Add to map so subsequent products with same name are found
+          existingProductsByName.set(originalProduct.name.toLowerCase(), newProduct as Product);
         }
       } catch (error) {
-        console.error(`Failed to add product ${item.productId} to buyer's list:`, error);
+        console.error(`Failed to add product ${productId} to buyer's list:`, error);
       }
     }
   }
