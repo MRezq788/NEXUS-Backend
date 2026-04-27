@@ -1,5 +1,6 @@
 import { admin } from '../../core/config/firebase';
 import { Product, ProductVariant, ProductStatus, computeStatus, formatDate } from './warehouse.product.model';
+import { propagateOwnerProductToAllocatedSites } from '../siteProductVectors/siteProductVectorSync';
 
 const db = admin.firestore();
 
@@ -238,7 +239,15 @@ export class ProductRepository {
       return { id: vDoc.id, ...vData } as ProductVariant;
     });
 
-    return this.formatProduct(updated, variants);
+    const formattedProduct = this.formatProduct(updated, variants);
+
+    try {
+      await propagateOwnerProductToAllocatedSites(userEmail, id);
+    } catch (error) {
+      console.error('Allocated site product sync failed:', error);
+    }
+
+    return formattedProduct;
   }
 
   // Delete single product

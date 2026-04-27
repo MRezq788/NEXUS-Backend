@@ -22,6 +22,7 @@ import {
   getAllocationHistoryController,
   createCashierPosSaleController,
   createBusinessOwnerStoreController,
+  updateStoreAiAssistantController,
   listBusinessOwnerStoresController,
   listOwnerProductsForStoreAllocationController,
   listStoreAllocatedProductsController,
@@ -108,6 +109,7 @@ router.get("/cashiers", verifyToken, getCashiersController);
 
 router.get("/stores", verifyToken, listBusinessOwnerStoresController);
 router.post("/stores", verifyToken, createBusinessOwnerStoreController);
+router.patch("/stores/:siteName/ai-assistant", verifyToken, updateStoreAiAssistantController);
 router.get("/stores/products", verifyToken, listOwnerProductsForStoreAllocationController);
 router.get("/stores/:siteName/allocated-products", verifyToken, listStoreAllocatedProductsController);
 router.post("/stores/allocate-product", verifyToken, allocateProductToStoreController);

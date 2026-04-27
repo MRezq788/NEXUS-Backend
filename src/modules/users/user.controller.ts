@@ -23,6 +23,7 @@ import {
   getAllocationHistoryService,
   createCashierPosSaleService,
   createBusinessOwnerStoreService,
+  updateStoreAiAssistantService,
   listBusinessOwnerStoresService,
   listOwnerProductsForStoreAllocationService,
   listStoreAllocatedProductsService,
@@ -689,6 +690,46 @@ export const createBusinessOwnerStoreController = async (
     });
   } catch (error: any) {
     console.error("Error in createBusinessOwnerStore controller:", error);
+    if (error.message.includes("Business Logic Error")) {
+      res.status(400).json({ success: false, message: error.message });
+      return;
+    }
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const updateStoreAiAssistantController = async (
+  req: Request | any,
+  res: Response,
+): Promise<void> => {
+  try {
+    const ownerEmail = req.user?.email as string | undefined;
+    const siteName = req.params.siteName as string;
+    const { enabled, systemPrompt } = req.body as {
+      enabled?: boolean;
+      systemPrompt?: string;
+    };
+
+    if (!ownerEmail) {
+      res.status(401).json({
+        success: false,
+        message: "Unauthorized: No authenticated user found.",
+      });
+      return;
+    }
+
+    const store = await updateStoreAiAssistantService(ownerEmail, siteName, {
+      enabled: Boolean(enabled),
+      systemPrompt: typeof systemPrompt === "string" ? systemPrompt : "",
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Store AI assistant settings updated successfully",
+      data: { store },
+    });
+  } catch (error: any) {
+    console.error("Error in updateStoreAiAssistantController:", error);
     if (error.message.includes("Business Logic Error")) {
       res.status(400).json({ success: false, message: error.message });
       return;

@@ -9,6 +9,16 @@ const handleError = (res: Response, error: unknown) => {
   return res.status(400).json({ success: false, message });
 };
 
+export const getSiteSettingsController = async (req: Request, res: Response) => {
+  try {
+    const siteName = asParam(req.params.siteName);
+    const settings = await storefrontService.getSiteSettings(siteName);
+    return res.json({ success: true, data: settings });
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
 export const listPagesController = async (req: Request, res: Response) => {
   try {
     const siteName = asParam(req.params.siteName);

@@ -31,6 +31,11 @@ export interface OwnerStoreRecord {
   updatedAt?: unknown;
 }
 
+export interface StoreAiAssistantSettings {
+  enabled: boolean;
+  systemPrompt?: string;
+}
+
 export interface OwnerProductVariantRecord {
   id: string;
   quantity: number;
@@ -283,6 +288,47 @@ export const getBusinessOwnerStoresRepo = async (
       siteName: siteSnap.id,
       ...(siteSnap.data() as Record<string, unknown>),
     })) as OwnerStoreRecord[];
+};
+
+export const updateStoreAiAssistantRepo = async (
+  ownerEmail: string,
+  siteName: string,
+  settings: StoreAiAssistantSettings,
+): Promise<OwnerStoreRecord> => {
+  const siteRef = db.collection("sites").doc(siteName);
+  const siteSnap = await siteRef.get();
+
+  if (!siteSnap.exists) {
+    throw new Error("Business Logic Error: Store not found.");
+  }
+
+  const siteData = siteSnap.data() || {};
+  if (siteData.owner !== ownerEmail) {
+    throw new Error("Business Logic Error: You can only edit your own stores.");
+  }
+
+  const nextAiAssistant = {
+    enabled: Boolean(settings.enabled),
+    systemPrompt: settings.systemPrompt?.trim() || "",
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  await siteRef.set(
+    {
+      store: {
+        ...(typeof siteData.store === "object" && siteData.store ? siteData.store : {}),
+        aiAssistant: nextAiAssistant,
+      },
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+
+  const updatedSnap = await siteRef.get();
+  return {
+    siteName: updatedSnap.id,
+    ...(updatedSnap.data() as Record<string, unknown>),
+  } as OwnerStoreRecord;
 };
 
 export const createBusinessOwnerStoreRepo = async (

@@ -23,6 +23,11 @@ export interface ProductRecord extends Record<string, unknown> {
   createdAt?: FirebaseFirestore.Timestamp;
 }
 
+export interface StorefrontSiteSettings {
+  siteName: string;
+  store: Record<string, unknown>;
+}
+
 const now = () => admin.firestore.Timestamp.now();
 const hashPassword = (password: string) => createHash("sha256").update(password).digest("hex");
 
@@ -56,6 +61,17 @@ export const getOrCreateSite = async (siteName: string) => {
   }
 
   return ref;
+};
+
+export const getSiteSettings = async (siteName: string): Promise<StorefrontSiteSettings> => {
+  const ref = await getOrCreateSite(siteName);
+  const snap = await ref.get();
+  const data = snap.data() || {};
+
+  return {
+    siteName,
+    store: (data.store as Record<string, unknown>) || {},
+  };
 };
 
 export const listPages = async (siteName: string): Promise<SitePageRecord[]> => {

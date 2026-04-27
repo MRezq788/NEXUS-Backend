@@ -7,6 +7,7 @@ import {
   getOrdersController,
   getPageBySlugController,
   getProductController,
+  getSiteSettingsController,
   getSiteUserController,
   listPagesController,
   listProductsController,
@@ -20,6 +21,7 @@ import {
 
 const router = Router();
 
+router.get("/sites/:siteName/settings", getSiteSettingsController);
 router.get("/sites/:siteName/pages", listPagesController);
 router.post("/sites/:siteName/pages", createPageController);
 router.patch("/sites/:siteName/pages/:pageId", updatePageController);

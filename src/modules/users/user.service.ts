@@ -30,11 +30,14 @@ import {
   CashierPosSaleOrderInput,
   createBusinessOwnerStoreRepo,
   getBusinessOwnerStoresRepo,
+  updateStoreAiAssistantRepo,
   getOwnerProductsForStoreAllocationRepo,
   getStoreAllocatedProductsRepo,
   allocateProductToStoreRepo,
   StoreProductAllocationInput,
+  StoreAiAssistantSettings,
 } from "./user.repository";
+import { syncAllocatedSiteProductVector } from "../siteProductVectors/siteProductVectorSync";
 
 export async function getUserSoldTotal(userId: string) {
   return await getUserSoldAmount(userId);
@@ -328,6 +331,31 @@ export const createBusinessOwnerStoreService = async (
   return createBusinessOwnerStoreRepo(ownerEmail, normalizedSiteName, storeDisplayName?.trim() || undefined);
 };
 
+export const updateStoreAiAssistantService = async (
+  ownerEmail: string,
+  siteNameRaw: string,
+  settings: StoreAiAssistantSettings,
+) => {
+  if (!ownerEmail) {
+    throw new Error("Business Logic Error: Missing authenticated user.");
+  }
+
+  const user = await getUserData(ownerEmail);
+  if (!user || user.role !== "business_owner") {
+    throw new Error("Business Logic Error: Only business owners can update store AI settings.");
+  }
+
+  const normalizedSiteName = siteNameRaw.trim().toLowerCase();
+  if (!normalizedSiteName) {
+    throw new Error("Business Logic Error: siteName is required.");
+  }
+
+  return updateStoreAiAssistantRepo(ownerEmail, normalizedSiteName, {
+    enabled: Boolean(settings.enabled),
+    systemPrompt: settings.systemPrompt || "",
+  });
+};
+
 export const listOwnerProductsForStoreAllocationService = async (ownerEmail: string) => {
   if (!ownerEmail) {
     throw new Error("Business Logic Error: Missing authenticated user.");
@@ -379,10 +407,18 @@ export const allocateProductToStoreService = async (
     throw new Error("Business Logic Error: quantity must be a positive integer.");
   }
 
-  return allocateProductToStoreRepo(ownerEmail, {
+  const result = await allocateProductToStoreRepo(ownerEmail, {
     siteName: normalizedSiteName,
     productId: payload.productId,
     variantId: payload.variantId,
     quantity: payload.quantity,
   });
+
+  try {
+    await syncAllocatedSiteProductVector(ownerEmail, normalizedSiteName, payload.productId);
+  } catch (error) {
+    console.error("Supabase allocated product sync failed:", error);
+  }
+
+  return result;
 };
