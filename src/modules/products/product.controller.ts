@@ -3,6 +3,8 @@ import { AuthRequest } from "../../core/middleware/auth.middleware";
 import { createProductService, getProductsService } from './product.service';
 import { successResponse, errorResponse, paginatedResponse } from "../../core/utils/response";
 import { getInventoryStatsService } from './product.service';
+import { getRecommendationsService } from './product.service';
+
 
 export const createProductController = async (
   req: AuthRequest,
@@ -88,5 +90,20 @@ export const getInventoryStatsController = async (
   } catch (error: any) {
     console.error("Get Inventory Stats Error:", error);
     return errorResponse(res, error.message ?? "Failed to fetch inventory stats", 500);
+  }
+};
+
+export const getRecommendationsController = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = (req.headers["x-user-email"] as string) || req.user?.uid;
+    if (!userId) {
+      return errorResponse(res, "Unauthorized", 401);
+    }
+
+    const products = await getRecommendationsService(userId);
+    return successResponse(res, products, "Recommendations fetched successfully");
+  } catch (error: any) {
+    console.error("Get Recommendations Error:", error);
+    return errorResponse(res, error.message ?? "Failed to fetch recommendations", 500);
   }
 };

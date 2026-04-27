@@ -224,6 +224,23 @@ export class ProductRepository {
 
     await batch.commit();
 
+    // Sync embedding to Supabase
+    const { syncProductEmbedding } = await import('../products/product.embedding');
+    const userRef = adminDb.collection('users').doc(userEmail);
+    const userSnap = await userRef.get();
+    
+    if (userSnap.data()?.role === 'warehouse') {
+      syncProductEmbedding(userEmail, {
+        id: id,
+        name: updates.name ?? existing.data()?.name,
+        description: updates.description ?? existing.data()?.description,
+        category: updates.category ?? existing.data()?.category,
+        attributes: updates.attributes ?? existing.data()?.attributes,
+      }).catch((err) => {
+        console.error('Embedding sync failed (non-blocking):', err);
+      });
+    }
+
     // Re-fetch with variants
     const updated = await productDoc.get();
     const variantsSnap = await productDoc.collection('variants').get();
@@ -254,6 +271,15 @@ export class ProductRepository {
       variantsSnap.forEach((vDoc) => batch.delete(vDoc.ref));
       batch.delete(productDoc);
       await batch.commit();
+      
+      const userRef = adminDb.collection('users').doc(userEmail);
+      const userSnap = await userRef.get();
+      if (userSnap.data()?.role === 'warehouse') {
+        const { deleteProductEmbedding } = await import('../products/product.embedding');
+        await deleteProductEmbedding(userEmail, id).catch((err) => {
+          console.error('Embedding delete failed (non-blocking):', err);
+        });
+      }
 
       return true;
     } catch (error) {
