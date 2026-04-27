@@ -65,7 +65,7 @@ async function generateEmbedding(text: string): Promise<number[]> {
     if (!response.embeddings || !response.embeddings[0] || !response.embeddings[0].values) {
       throw new Error('Failed to generate embedding: response does not contain valid embeddings');
     }
-    console.log(`[Embedding] Google GenAI response:`, response.embeddings[0].values.length, 'dimensions');
+    // console.log(`[Embedding] Google GenAI response:`, response.embeddings[0].values.length, 'dimensions');
     return response.embeddings[0].values;
 }
 
@@ -102,10 +102,10 @@ export async function syncProductEmbedding(
 ): Promise<void> {
   try {
     const semanticText = buildSemanticText(product);
-    console.log(`[Embedding] Semantic text for ${product.id}:\n${semanticText}`);
+    // console.log(`[Embedding] Semantic text for ${product.id}:\n${semanticText}`);
 
     const embedding = await generateEmbedding(semanticText);
-    console.log(`[Embedding] Generated ${embedding.length}-dim embedding for ${product.id}`);
+    // console.log(`[Embedding] Generated ${embedding.length}-dim embedding for ${product.id}`);
 
     await saveEmbedding({
       warehouseId,
@@ -114,7 +114,7 @@ export async function syncProductEmbedding(
       embedding,
     });
 
-    console.log(`[Embedding] Saved embedding for product ${product.id}`);
+    // console.log(`[Embedding] Saved embedding for product ${product.id}`);
   } catch (error) {
     console.error(`[Embedding] Failed for product ${product.id}:`, error);
   }

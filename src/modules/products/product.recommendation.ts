@@ -117,7 +117,7 @@ async function generateEmbedding(text: string): Promise<number[]> {
     if (!response.embeddings || !response.embeddings[0] || !response.embeddings[0].values) {
       throw new Error('Failed to generate embedding: response does not contain valid embeddings');
     }
-    console.log(`[Embedding] Google GenAI response:`, response.embeddings[0].values.length, 'dimensions');
+    // console.log(`[Embedding] Google GenAI response:`, response.embeddings[0].values.length, 'dimensions');
     return response.embeddings[0].values;
 }
 
