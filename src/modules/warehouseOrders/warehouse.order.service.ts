@@ -1,3 +1,4 @@
+import crypto from 'crypto'; // Ensure crypto is available for UUID generation
 import { orderRepository } from "./warehouse.order.repository";
 import { productRepository } from "../warehouseProducts/warehouse.product.repository";
 import { Order, OrderStatus } from "./warehouse.order.model";
@@ -148,16 +149,9 @@ export class OrderService {
     userEmail: string,
     orderData: Partial<Order>,
   ): Promise<Order> {
-    // Validate required fields
-    if (!orderData.buyer) {
-      throw new Error("Buyer is required");
-    }
-    if (!orderData.products || orderData.products.length === 0) {
-      throw new Error("At least one product is required");
-    }
-    if (orderData.total === undefined || orderData.total < 0) {
-      throw new Error("Valid total amount is required");
-    }
+    if (!orderData.buyer) throw new Error("Buyer is required");
+    if (!orderData.products || orderData.products.length === 0) throw new Error("At least one product is required");
+    if (orderData.total === undefined || orderData.total < 0) throw new Error("Valid total amount is required");
 
     return orderRepository.create(userEmail, orderData);
   }
@@ -176,19 +170,14 @@ export class OrderService {
     status: OrderStatus,
   ): Promise<Order | null> {
     const order = await orderRepository.findById(userEmail, id);
-    if (!order) {
-      throw new Error("Order not found");
-    }
+    if (!order) throw new Error("Order not found");
 
-    // If changing to completed, add products to buyer's list
     if (status === "completed" && order.status !== "completed") {
       await this.addProductsToBuyerList(userEmail, order);
     }
 
     const ownerCanAccessProducts = status === "completed";
-    const ownerProductAccessAt = ownerCanAccessProducts
-      ? new Date().toISOString()
-      : null;
+    const ownerProductAccessAt = ownerCanAccessProducts ? new Date().toISOString() : null;
 
     const updatedOrder = await orderRepository.update(userEmail, id, {
       status,
@@ -196,7 +185,6 @@ export class OrderService {
       ownerProductAccessAt,
     });
 
-    // Keep buyer-side order status/access aligned with warehouse order status.
     if (order.buyer) {
       try {
         await orderRepository.update(order.buyer, id, {
@@ -205,10 +193,7 @@ export class OrderService {
           ownerProductAccessAt,
         });
       } catch (error) {
-        console.error(
-          `Failed to mirror status for buyer order ${id} (${order.buyer})`,
-          error,
-        );
+        console.error('Failed to mirror status for buyer order', { id, buyer: order.buyer }, error);
       }
     }
 
@@ -231,17 +216,10 @@ export class OrderService {
     userEmail: string,
     id: string,
   ): Promise<{ success: boolean; message?: string }> {
-    // Get the order
     const order = await orderRepository.findById(userEmail, id);
-    if (!order) {
-      throw new Error("Order not found");
-    }
+    if (!order) throw new Error("Order not found");
+    if (order.status !== "pending") throw new Error("Only pending orders can be accepted");
 
-    if (order.status !== "pending") {
-      throw new Error("Only pending orders can be accepted");
-    }
-
-    // Validate stock availability
     const stockCheck = await this.validateStock(userEmail, order.products);
     if (!stockCheck.valid) {
       return {
@@ -250,11 +228,8 @@ export class OrderService {
       };
     }
 
-    // Deduct stock from products
     await this.deductStock(userEmail, order.products);
-
-    // Update order status to Processing
-    await orderRepository.updateStatus(userEmail, id, "processing");
+    await this.updateOrderStatus(userEmail, id, "processing");
 
     return { success: true };
   }
@@ -262,43 +237,26 @@ export class OrderService {
   async rejectOrder(userEmail: string, id: string): Promise<Order | null> {
     const order = await orderRepository.findById(userEmail, id);
     if (!order) return null;
+    if (order.status !== "pending") throw new Error("Only pending orders can be rejected");
 
-    if (order.status !== "pending") {
-      throw new Error("Only pending orders can be rejected");
-    }
-
-    return orderRepository.updateStatus(userEmail, id, "cancelled");
+    return this.updateOrderStatus(userEmail, id, "cancelled");
   }
 
-  // Helper method to validate stock availability
   private async validateStock(
     userEmail: string,
-    orderProducts: {
-      productId: string;
-      quantity: number;
-      variantId?: string;
-    }[],
+    orderProducts: { productId: string; quantity: number; variantId?: string; }[],
   ): Promise<{ valid: boolean; insufficientProducts: string[] }> {
     const insufficientProducts: string[] = [];
 
     for (const item of orderProducts) {
-      const product = await productRepository.findById(
-        userEmail,
-        item.productId,
-      );
+      const product = await productRepository.findById(userEmail, item.productId);
       if (!product) {
         insufficientProducts.push(`Product ${item.productId} not found`);
         continue;
       }
 
-      if (
-        item.variantId &&
-        Array.isArray(product.variants) &&
-        product.variants.length > 0
-      ) {
-        const selectedVariant = product.variants.find(
-          (variant) => variant.id === item.variantId,
-        );
+      if (item.variantId && Array.isArray(product.variants) && product.variants.length > 0) {
+        const selectedVariant = product.variants.find((variant) => variant.id === item.variantId);
         const availableVariantQuantity = Number(selectedVariant?.quantity) || 0;
 
         if (!selectedVariant) {
@@ -307,61 +265,35 @@ export class OrderService {
         }
 
         if (availableVariantQuantity < item.quantity) {
-          insufficientProducts.push(
-            `${product.name} (${item.variantId}) (need ${item.quantity}, have ${availableVariantQuantity})`,
-          );
+          insufficientProducts.push(`${product.name} (${item.variantId}) (need ${item.quantity}, have ${availableVariantQuantity})`);
         }
         continue;
       }
 
       const availableQuantity = this.getAvailableQuantity(product);
       if (availableQuantity < item.quantity) {
-        insufficientProducts.push(
-          `${product.name} (need ${item.quantity}, have ${availableQuantity})`,
-        );
+        insufficientProducts.push(`${product.name} (need ${item.quantity}, have ${availableQuantity})`);
       }
     }
 
-    return {
-      valid: insufficientProducts.length === 0,
-      insufficientProducts,
-    };
+    return { valid: insufficientProducts.length === 0, insufficientProducts };
   }
 
-  // Helper method to deduct stock
   private async deductStock(
     userEmail: string,
-    orderProducts: {
-      productId: string;
-      quantity: number;
-      variantId?: string;
-    }[],
+    orderProducts: { productId: string; quantity: number; variantId?: string; }[],
   ): Promise<void> {
     for (const item of orderProducts) {
-      const product = await productRepository.findById(
-        userEmail,
-        item.productId,
-      );
+      const product = await productRepository.findById(userEmail, item.productId);
       if (!product) continue;
 
-      const hasVariants =
-        Array.isArray(product.variants) && product.variants.length > 0;
+      const hasVariants = Array.isArray(product.variants) && product.variants.length > 0;
 
       if (hasVariants) {
         const updatedVariants = item.variantId
-          ? this.updateSpecificVariant(
-              product.variants as ProductVariant[],
-              item.variantId,
-              -item.quantity,
-            )
-          : this.deductFromVariants(
-              product.variants as ProductVariant[],
-              item.quantity,
-            );
-        const updatedQuantity = updatedVariants.reduce(
-          (acc, variant) => acc + (Number(variant.quantity) || 0),
-          0,
-        );
+          ? this.updateSpecificVariant(product.variants as ProductVariant[], item.variantId, -item.quantity)
+          : this.deductFromVariants(product.variants as ProductVariant[], item.quantity);
+        const updatedQuantity = updatedVariants.reduce((acc, variant) => acc + (Number(variant.quantity) || 0), 0);
 
         await productRepository.update(userEmail, item.productId, {
           variants: updatedVariants,
@@ -382,59 +314,31 @@ export class OrderService {
     userEmail: string,
     id: string,
   ): Promise<{ success: boolean; message?: string }> {
-    // Get the order
     const order = await orderRepository.findById(userEmail, id);
-    if (!order) {
-      throw new Error("Order not found");
-    }
+    if (!order) throw new Error("Order not found");
+    if (order.status !== "processing") throw new Error("Only processing orders can be cancelled");
 
-    if (order.status !== "processing") {
-      throw new Error("Only processing orders can be cancelled");
-    }
-
-    // Restock products (reverse the stock deduction)
     await this.restockProducts(userEmail, order.products);
-
-    // Update order status to Cancelled
-    await orderRepository.updateStatus(userEmail, id, "cancelled");
+    await this.updateOrderStatus(userEmail, id, "cancelled");
 
     return { success: true };
   }
 
-  // Helper method to restock products when cancelling
   private async restockProducts(
     userEmail: string,
-    orderProducts: {
-      productId: string;
-      quantity: number;
-      variantId?: string;
-    }[],
+    orderProducts: { productId: string; quantity: number; variantId?: string; }[],
   ): Promise<void> {
     for (const item of orderProducts) {
-      const product = await productRepository.findById(
-        userEmail,
-        item.productId,
-      );
+      const product = await productRepository.findById(userEmail, item.productId);
       if (!product) continue;
 
-      const hasVariants =
-        Array.isArray(product.variants) && product.variants.length > 0;
+      const hasVariants = Array.isArray(product.variants) && product.variants.length > 0;
 
       if (hasVariants) {
         const updatedVariants = item.variantId
-          ? this.updateSpecificVariant(
-              product.variants as ProductVariant[],
-              item.variantId,
-              item.quantity,
-            )
-          : this.restockToVariants(
-              product.variants as ProductVariant[],
-              item.quantity,
-            );
-        const updatedQuantity = updatedVariants.reduce(
-          (acc, variant) => acc + (Number(variant.quantity) || 0),
-          0,
-        );
+          ? this.updateSpecificVariant(product.variants as ProductVariant[], item.variantId, item.quantity)
+          : this.restockToVariants(product.variants as ProductVariant[], item.quantity);
+        const updatedQuantity = updatedVariants.reduce((acc, variant) => acc + (Number(variant.quantity) || 0), 0);
 
         await productRepository.update(userEmail, item.productId, {
           variants: updatedVariants,
@@ -455,201 +359,228 @@ export class OrderService {
     sellerEmail: string,
     order: Order,
   ): Promise<void> {
-    // The buyer's email is stored in order.buyer
     const buyerEmail = order.buyer;
+    if (!buyerEmail) return;
 
-    console.log(
-      `Adding products to buyer ${buyerEmail}'s list for order ${order.id}`,
-    );
-
-    if (!buyerEmail) {
-      console.error("No buyer email found in order");
-      return;
-    }
-
-    // Verify buyer exists as a user
     const buyerExists = await orderRepository.verifyUser(buyerEmail);
-    if (!buyerExists) {
-      console.error(`Buyer ${buyerEmail} not found`);
-      throw new Error("Buyer user not found");
+    if (!buyerExists) throw new Error("Buyer user not found");
+
+    // 🔹 GROUP order items by productId to process each product once
+    const groupedByProduct = new Map<string, typeof order.products>();
+    for (const item of order.products) {
+      if (!groupedByProduct.has(item.productId)) {
+        groupedByProduct.set(item.productId, []);
+      }
+      groupedByProduct.get(item.productId)!.push(item);
     }
 
+    // 🔹 Fetch buyer's existing products once
     const buyerProducts = await productRepository.findAll(buyerEmail, 1, 1000);
+    const existingProductsByName = new Map<string, Product>();
+    for (const p of buyerProducts.products) {
+      const fullProduct = await productRepository.findById(buyerEmail, p.id);
+      if (fullProduct) {
+        existingProductsByName.set(fullProduct.name.toLowerCase(), fullProduct);
+      }
+    }
 
-    // For each product in the order, add it to buyer's product list
-    for (const item of order.products) {
+    // 🔹 Process each unique product
+    for (const [productId, items] of groupedByProduct) {
       try {
-        // Get the original product details from seller
-        const originalProduct = await productRepository.findById(
-          sellerEmail,
-          item.productId,
-        );
+        const originalProduct = await productRepository.findById(sellerEmail, productId);
+        if (!originalProduct) continue;
 
-        if (!originalProduct) {
-          console.error(
-            `Product ${item.productId} not found in seller's inventory`,
-          );
-          continue;
-        }
-
-        const existingProduct = buyerProducts.products.find(
-          (p) => p.name.toLowerCase() === originalProduct.name.toLowerCase(),
-        );
-
-        const basePrice = Number(
-          originalProduct.basePrice ?? originalProduct.price ?? 0,
-        );
-
-        const sourceVariant = item.variantId
-          ? (originalProduct.variants || []).find(
-              (variant) => variant.id === item.variantId,
-            )
-          : undefined;
-
-        const { id: _svId, price: _svPrice, quantity: _svQuantity, ...sourceVariantAttributesRest } = sourceVariant || {};
-        const sourceVariantAttributes = sourceVariant ? sourceVariantAttributesRest : undefined;
-
-        const selectedVariantAttributes: Record<string, string> =
-          item.variantAttributes || sourceVariantAttributes || {};
-
-        const selectedVariantPrice = Number(
-          sourceVariant?.price ?? item.price ?? basePrice,
-        );
-
-        const hasSelectedAttributes =
-          Object.keys(selectedVariantAttributes).length > 0;
+        const basePrice = Number(originalProduct.basePrice ?? originalProduct.price ?? 0);
+        const existingProduct = existingProductsByName.get(originalProduct.name.toLowerCase());
 
         if (existingProduct) {
-          const existingVariants = Array.isArray(existingProduct.variants)
-            ? [...existingProduct.variants]
+          // ── Product exists: merge new variants into existing ones ──
+          // Start with a deep copy of all existing variants
+          const mergedVariants: ProductVariant[] = Array.isArray(existingProduct.variants)
+            ? existingProduct.variants.map(v => ({ ...v }))
             : [];
-          const hasExistingVariants = existingVariants.length > 0;
 
-          if (hasSelectedAttributes || hasExistingVariants) {
-            const variants = hasExistingVariants
-              ? existingVariants
-              : [
-                  {
-                    id: crypto.randomUUID(),
-                    price: basePrice,
-                    quantity: Number(existingProduct.quantity) || 0,
-                  },
-                ];
+          // Also track total quantity from existing variants (or product-level quantity if no variants)
+          let totalQuantity = mergedVariants.reduce((sum, v) => sum + (Number(v.quantity) || 0), 0);
 
-            // Find matching variant by attribute equality instead of by ID
-            const variantIndex = hasSelectedAttributes
-              ? variants.findIndex((variant) => {
-                  const { id: _id, price: _p, quantity: _q, ...vAttrs } = variant;
-                  return this.attributesMatch(
-                    vAttrs as Record<string, string>,
-                    selectedVariantAttributes,
-                  );
-                })
-              : -1;
-
-            if (variantIndex >= 0) {
-              const { id: _id, price: _p, quantity: _q, ...oldAttrs } = variants[variantIndex];
-              variants[variantIndex] = {
-                ...variants[variantIndex],
-                ...selectedVariantAttributes,
-                price: Number.isFinite(selectedVariantPrice)
-                  ? selectedVariantPrice
-                  : Number(variants[variantIndex].price) || 0,
-                quantity:
-                  (Number(variants[variantIndex].quantity) || 0) +
-                  item.quantity,
-              };
-            } else {
-              // New variant — auto-generated ID
-              variants.push({
-                id: crypto.randomUUID(),
-                ...selectedVariantAttributes,
-                price: selectedVariantPrice,
-                quantity: item.quantity,
-              });
-            }
-
-            const nextQuantity = variants.reduce(
-              (sum, variant) => sum + (Number(variant.quantity) || 0),
-              0,
-            );
-
-            await productRepository.update(buyerEmail, existingProduct.id, {
-              variants,
-              quantity: nextQuantity,
-              attributes: this.mergeAttributeValues(
-                existingProduct.attributes,
-                selectedVariantAttributes,
-              ),
-              price: basePrice,
-              basePrice,
+          // If product has no variants but has quantity, create a default variant to track it
+          if (mergedVariants.length === 0 && (existingProduct.quantity || 0) > 0) {
+            mergedVariants.push({
+              id: crypto.randomUUID(),
+              price: Number(existingProduct.price) || basePrice,
+              quantity: existingProduct.quantity,
             });
-          } else {
-            // Non-variant product update path
-            const newQuantity =
-              (Number(existingProduct.quantity) || 0) + item.quantity;
-            await productRepository.update(buyerEmail, existingProduct.id, {
-              quantity: newQuantity,
-              price: basePrice,
-              basePrice,
-              attributes: originalProduct.attributes || [],
-            });
+            totalQuantity = existingProduct.quantity;
           }
-        } else {
-          // Create new product for buyer with full structure.
-          const hasProductVariants =
-            Array.isArray(originalProduct.variants) &&
-            originalProduct.variants.length > 0;
 
-          const initialVariants = hasSelectedAttributes
-            ? [
-                {
+          // Track all attributes across all variants (existing + new)
+          const allAttributes = new Map<string, Set<string>>();
+
+          // First: collect attributes from existing variants
+          for (const v of mergedVariants) {
+            const { id: _id, price: _pr, quantity: _qt, ...vAttrs } = v;
+            for (const [key, value] of Object.entries(vAttrs)) {
+              if (!allAttributes.has(key)) allAttributes.set(key, new Set());
+              allAttributes.get(key)!.add(String(value));
+            }
+          }
+
+          // Second: process each ordered item and merge into mergedVariants
+          for (const item of items) {
+            const sourceVariant = item.variantId
+              ? (originalProduct.variants || []).find((v) => v.id === item.variantId)
+              : undefined;
+
+            const { id: _i, price: _p, quantity: _q, ...sourceVariantAttributes } = sourceVariant || {};
+            const selectedVariantAttributes: Record<string, string> = item.variantAttributes || (sourceVariantAttributes as any) || {};
+            const selectedVariantPrice = Number(sourceVariant?.price ?? item.price ?? basePrice);
+            const hasSelectedAttributes = Object.keys(selectedVariantAttributes).length > 0;
+
+            if (hasSelectedAttributes) {
+              // Try to find matching variant by attributes
+              const variantIndex = mergedVariants.findIndex((v) => {
+                const { id: _id, price: _pr, quantity: _qt, ...vAttrs } = v;
+                return this.attributesMatch(vAttrs as Record<string, string>, selectedVariantAttributes);
+              });
+
+              if (variantIndex >= 0) {
+                // Found matching variant: increment quantity
+                mergedVariants[variantIndex] = {
+                  ...mergedVariants[variantIndex],
+                  ...selectedVariantAttributes,
+                  price: selectedVariantPrice,
+                  quantity: (Number(mergedVariants[variantIndex].quantity) || 0) + item.quantity,
+                };
+              } else {
+                // New variant: add it
+                mergedVariants.push({
                   id: crypto.randomUUID(),
                   ...selectedVariantAttributes,
                   price: selectedVariantPrice,
                   quantity: item.quantity,
-                },
-              ]
-            : hasProductVariants
-              ? [
-                  {
-                    id: crypto.randomUUID(),
-                    price: basePrice,
-                    quantity: item.quantity,
-                  },
-                ]
+                });
+              }
+
+              // Track attributes
+              for (const [key, value] of Object.entries(selectedVariantAttributes)) {
+                if (!allAttributes.has(key)) allAttributes.set(key, new Set());
+                allAttributes.get(key)!.add(String(value));
+              }
+            } else {
+              // No variant attributes: add to a default variant or create one
+              if (mergedVariants.length > 0) {
+                // Add to first variant
+                mergedVariants[0] = {
+                  ...mergedVariants[0],
+                  quantity: (Number(mergedVariants[0].quantity) || 0) + item.quantity,
+                };
+              } else {
+                mergedVariants.push({
+                  id: crypto.randomUUID(),
+                  price: basePrice,
+                  quantity: item.quantity,
+                });
+              }
+            }
+
+            totalQuantity += item.quantity;
+          }
+
+          // Build final attributes array
+          const mergedAttributes = Array.from(allAttributes.entries()).map(([name, values]) => ({
+            name,
+            values: Array.from(values),
+          }));
+
+          // Update the product once with fully merged variants
+          await productRepository.update(buyerEmail, existingProduct.id, {
+            variants: mergedVariants,
+            quantity: totalQuantity,
+            attributes: mergedAttributes.length > 0 ? mergedAttributes : originalProduct.attributes || [],
+            price: basePrice,
+            basePrice,
+          });
+
+          // Update in map so subsequent products with same name see updated state
+          existingProduct.variants = mergedVariants;
+          existingProduct.quantity = totalQuantity;
+
+        } else {
+          // ── Product doesn't exist: create once with all variants ──
+          const allVariants: any[] = [];
+          const allAttributes = new Map<string, Set<string>>();
+
+          for (const item of items) {
+            const sourceVariant = item.variantId
+              ? (originalProduct.variants || []).find((v) => v.id === item.variantId)
               : undefined;
 
-          const initialAttributes = hasSelectedAttributes
-            ? this.mergeAttributeValues(
-                originalProduct.attributes,
-                selectedVariantAttributes,
-              )
-            : originalProduct.attributes || [];
+            const { id: _i, price: _p, quantity: _q, ...sourceVariantAttributes } = sourceVariant || {};
+            const selectedVariantAttributes: Record<string, string> = item.variantAttributes || (sourceVariantAttributes as any) || {};
+            const selectedVariantPrice = Number(sourceVariant?.price ?? item.price ?? basePrice);
+            const hasSelectedAttributes = Object.keys(selectedVariantAttributes).length > 0;
 
-          await productRepository.create(buyerEmail, {
+            if (hasSelectedAttributes) {
+              // Check if variant already exists in allVariants (within this same order)
+              const existingIndex = allVariants.findIndex((v) => {
+                const { id: _id, price: _pr, quantity: _qt, ...vAttrs } = v;
+                return this.attributesMatch(vAttrs as Record<string, string>, selectedVariantAttributes);
+              });
+
+              if (existingIndex >= 0) {
+                allVariants[existingIndex].quantity = (Number(allVariants[existingIndex].quantity) || 0) + item.quantity;
+              } else {
+                allVariants.push({
+                  id: crypto.randomUUID(),
+                  ...selectedVariantAttributes,
+                  price: selectedVariantPrice,
+                  quantity: item.quantity,
+                });
+              }
+
+              for (const [key, value] of Object.entries(selectedVariantAttributes)) {
+                if (!allAttributes.has(key)) allAttributes.set(key, new Set());
+                allAttributes.get(key)!.add(String(value));
+              }
+            } else {
+              // No variant attributes
+              if (allVariants.length > 0) {
+                allVariants[0].quantity = (Number(allVariants[0].quantity) || 0) + item.quantity;
+              } else {
+                allVariants.push({
+                  id: crypto.randomUUID(),
+                  price: basePrice,
+                  quantity: item.quantity,
+                });
+              }
+            }
+          }
+
+          const totalQuantity = allVariants.reduce((sum, v) => sum + (Number(v.quantity) || 0), 0);
+          const mergedAttributes = Array.from(allAttributes.entries()).map(([name, values]) => ({
+            name,
+            values: Array.from(values),
+          }));
+
+          const newProduct = await productRepository.create(buyerEmail, {
             name: originalProduct.name,
-            quantity: item.quantity,
+            quantity: totalQuantity,
             unit: originalProduct.unit,
             price: basePrice,
             basePrice,
             description: originalProduct.description,
             category: originalProduct.category,
             images: originalProduct.images || [],
-            attributes: initialAttributes,
-            variants: initialVariants,
+            attributes: mergedAttributes.length > 0 ? mergedAttributes : originalProduct.attributes || [],
+            variants: allVariants.length > 0 ? allVariants : undefined,
             active: true,
           });
+
+          // Add to map so subsequent products with same name are found
+          existingProductsByName.set(originalProduct.name.toLowerCase(), newProduct as Product);
         }
-        console.log(
-          `Added product ${originalProduct.name} (quantity: ${item.quantity}) to buyer ${buyerEmail}'s list`,
-        );
       } catch (error) {
-        console.error(
-          `Failed to add product ${item.productId} to buyer's list:`,
-          error,
-        );
-        // Continue with other products even if one fails
+        console.error(`Failed to add product ${productId} to buyer's list:`, error);
       }
     }
   }

@@ -1,34 +1,17 @@
-import {
-  collection,
-  doc,
-  getDocs,
-  getDoc,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  query,
-  where,
-  orderBy,
-  writeBatch,
-  DocumentSnapshot,
-  DocumentData,
-  arrayUnion,
-} from "firebase/firestore";
-import { db } from "../../core/config/clientFirebase";
+import * as admin from "firebase-admin";
+import { adminDb } from "../../core/config/adminFirebase";
 import { Order, OrderStatus, formatDate } from "./warehouse.order.model";
 
 // Get user's orders subcollection reference
 function getUserOrdersCollection(userEmail: string) {
-  const userDoc = doc(db, "users", userEmail);
-  return collection(userDoc, "orders");
+  return adminDb.collection("users").doc(userEmail).collection("orders");
 }
 
 export class OrderRepository {
   // Verify user exists
   async verifyUser(userEmail: string): Promise<boolean> {
-    const userDoc = doc(db, "users", userEmail);
-    const snapshot = await getDoc(userDoc);
-    return snapshot.exists();
+    const userDoc = await adminDb.collection("users").doc(userEmail).get();
+    return userDoc.exists;
   }
 
   // Get all orders with optional status filter
@@ -40,15 +23,14 @@ export class OrderRepository {
 
     const ordersRef = getUserOrdersCollection(userEmail);
 
-    let constraints: any[] = [orderBy("createdAt", "desc")];
+    let q: admin.firestore.Query = ordersRef.orderBy("createdAt", "desc");
 
     // Add status filter if specified
     if (status) {
-      constraints.push(where("status", "==", status));
+      q = q.where("status", "==", status);
     }
 
-    const q = query(ordersRef, ...constraints);
-    const snapshot = await getDocs(q);
+    const snapshot = await q.get();
 
     const orders: Order[] = [];
     snapshot.forEach((doc) => {
@@ -63,10 +45,10 @@ export class OrderRepository {
     const userExists = await this.verifyUser(userEmail);
     if (!userExists) throw new Error("User not found");
 
-    const orderDoc = doc(getUserOrdersCollection(userEmail), id);
-    const snapshot = await getDoc(orderDoc);
+    const orderDoc = getUserOrdersCollection(userEmail).doc(id);
+    const snapshot = await orderDoc.get();
 
-    if (!snapshot.exists()) return null;
+    if (!snapshot.exists) return null;
 
     return this.formatOrder(snapshot);
   }
@@ -90,7 +72,7 @@ export class OrderRepository {
     };
 
     const ordersRef = getUserOrdersCollection(userEmail);
-    const docRef = await addDoc(ordersRef, data);
+    const docRef = await ordersRef.add(data);
 
     return {
       id: docRef.id,
@@ -109,10 +91,10 @@ export class OrderRepository {
     const userExists = await this.verifyUser(userEmail);
     if (!userExists) throw new Error("User not found");
 
-    const orderDoc = doc(getUserOrdersCollection(userEmail), id);
-    const existing = await getDoc(orderDoc);
+    const orderDoc = getUserOrdersCollection(userEmail).doc(id);
+    const existing = await orderDoc.get();
 
-    if (!existing.exists()) return null;
+    if (!existing.exists) return null;
 
     const now = new Date();
     const updates: any = {
@@ -130,9 +112,9 @@ export class OrderRepository {
       updates.ownerProductAccessAt = orderData.ownerProductAccessAt;
     }
 
-    await updateDoc(orderDoc, updates);
+    await orderDoc.update(updates);
 
-    const updated = await getDoc(orderDoc);
+    const updated = await orderDoc.get();
     return this.formatOrder(updated);
   }
 
@@ -151,8 +133,8 @@ export class OrderRepository {
     if (!userExists) throw new Error("User not found");
 
     try {
-      const orderDoc = doc(getUserOrdersCollection(userEmail), id);
-      await deleteDoc(orderDoc);
+      const orderDoc = getUserOrdersCollection(userEmail).doc(id);
+      await orderDoc.delete();
       return true;
     } catch (error) {
       return false;
@@ -164,11 +146,11 @@ export class OrderRepository {
     const userExists = await this.verifyUser(userEmail);
     if (!userExists) throw new Error("User not found");
 
-    const batch = writeBatch(db);
+    const batch = adminDb.batch();
     let count = 0;
 
     for (const id of ids) {
-      const orderDoc = doc(getUserOrdersCollection(userEmail), id);
+      const orderDoc = getUserOrdersCollection(userEmail).doc(id);
       batch.delete(orderDoc);
       count++;
     }
@@ -190,7 +172,7 @@ export class OrderRepository {
     if (!userExists) throw new Error("User not found");
 
     const ordersRef = getUserOrdersCollection(userEmail);
-    const snapshot = await getDocs(ordersRef);
+    const snapshot = await ordersRef.get();
 
     let total = 0;
     let pending = 0;
@@ -199,7 +181,7 @@ export class OrderRepository {
     let cancelled = 0;
     let totalRevenue = 0;
 
-    snapshot.forEach((doc) => {
+    snapshot.docs.forEach((doc) => {
       const data = doc.data();
       total++;
 
@@ -224,7 +206,7 @@ export class OrderRepository {
   }
 
   // Format Firestore document to Order
-  private formatOrder(doc: DocumentSnapshot<DocumentData>): Order {
+  private formatOrder(doc: admin.firestore.DocumentSnapshot): Order {
     const data = doc.data()!;
 
     // Handle Firestore Timestamp or string
@@ -249,7 +231,7 @@ export class OrderRepository {
   private convertToDate(timestamp: any): Date {
     if (!timestamp) return new Date();
 
-    // Firestore Timestamp has toDate() method
+    // Admin SDK Timestamp has toDate() method
     if (timestamp.toDate && typeof timestamp.toDate === "function") {
       return timestamp.toDate();
     }

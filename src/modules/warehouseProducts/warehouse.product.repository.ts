@@ -1,20 +1,18 @@
-import { admin } from '../../core/config/firebase';
+import * as admin from 'firebase-admin';
+import { adminDb } from '../../core/config/adminFirebase';
 import { Product, ProductVariant, ProductStatus, computeStatus, formatDate } from './warehouse.product.model';
 import { propagateOwnerProductToAllocatedSites } from '../siteProductVectors/siteProductVectorSync';
 
-const db = admin.firestore();
-
 // Get user's products subcollection reference
 function getUserProductsCollection(userEmail: string) {
-  return db.collection('users').doc(userEmail).collection('products');
+  return adminDb.collection('users').doc(userEmail).collection('products');
 }
 
 export class ProductRepository {
   // Verify user exists
   async verifyUser(userEmail: string): Promise<boolean> {
-    const userDoc = db.collection('users').doc(userEmail);
-    const snapshot = await userDoc.get();
-    return snapshot.exists;
+    const userDoc = await adminDb.collection('users').doc(userEmail).get();
+    return userDoc.exists;
   }
 
   // Get paginated products with optional filtering
@@ -32,16 +30,16 @@ export class ProductRepository {
     }
 
     const productsRef = getUserProductsCollection(userEmail);
-
+    
     // Build base query
-    let q: FirebaseFirestore.Query = productsRef.orderBy('createdAt', 'desc');
-
+    let q: admin.firestore.Query = productsRef.orderBy('createdAt', 'desc');
+    
     // Add status filter if specified
     if (status && status !== 'All') {
       q = q.where('status', '==', status);
     }
 
-    // Get total count
+    // Get total count using Admin SDK
     const countSnapshot = await q.count().get();
     const total = countSnapshot.data().count;
 
@@ -126,7 +124,7 @@ export class ProductRepository {
     if (productData.active !== undefined) data.active = productData.active;
 
     const productsRef = getUserProductsCollection(userEmail);
-    const batch = db.batch();
+    const batch = adminDb.batch();
     const productDocRef = productsRef.doc(); // auto-ID for the product
     batch.set(productDocRef, data);
 
@@ -190,7 +188,7 @@ export class ProductRepository {
       updates.status   = computeStatus(productData.quantity);
     }
 
-    const batch = db.batch();
+    const batch = adminDb.batch();
     batch.update(productDoc, updates);
 
     // Update variants subcollection while preserving stable variant IDs
@@ -227,6 +225,23 @@ export class ProductRepository {
 
     await batch.commit();
 
+    // Sync embedding to Supabase
+    const { syncProductEmbedding } = await import('../products/product.embedding');
+    const userRef = adminDb.collection('users').doc(userEmail);
+    const userSnap = await userRef.get();
+    
+    if (userSnap.data()?.role === 'warehouse') {
+      syncProductEmbedding(userEmail, {
+        id: id,
+        name: updates.name ?? existing.data()?.name,
+        description: updates.description ?? existing.data()?.description,
+        category: updates.category ?? existing.data()?.category,
+        attributes: updates.attributes ?? existing.data()?.attributes,
+      }).catch((err) => {
+        console.error('Embedding sync failed (non-blocking):', err);
+      });
+    }
+
     // Re-fetch with variants
     const updated = await productDoc.get();
     const variantsSnap = await productDoc.collection('variants').get();
@@ -261,10 +276,19 @@ export class ProductRepository {
       // Delete variants subcollection first
       const variantsRef = productDoc.collection('variants');
       const variantsSnap = await variantsRef.get();
-      const batch = db.batch();
+      const batch = adminDb.batch();
       variantsSnap.forEach((vDoc) => batch.delete(vDoc.ref));
       batch.delete(productDoc);
       await batch.commit();
+      
+      const userRef = adminDb.collection('users').doc(userEmail);
+      const userSnap = await userRef.get();
+      if (userSnap.data()?.role === 'warehouse') {
+        const { deleteProductEmbedding } = await import('../products/product.embedding');
+        await deleteProductEmbedding(userEmail, id).catch((err) => {
+          console.error('Embedding delete failed (non-blocking):', err);
+        });
+      }
 
       return true;
     } catch (error) {
@@ -277,7 +301,7 @@ export class ProductRepository {
     const userExists = await this.verifyUser(userEmail);
     if (!userExists) throw new Error('User not found');
 
-    const batch = db.batch();
+    const batch = adminDb.batch();
     let count = 0;
 
     for (const id of ids) {
@@ -321,13 +345,13 @@ export class ProductRepository {
   // Safely convert a Firestore Timestamp, Date, ISO string, or null to a Date
   private toDate(value: any): Date | null {
     if (!value) return null;
-    if (typeof value.toDate === 'function') return value.toDate(); // Firestore Timestamp
+    if (typeof value.toDate === 'function') return value.toDate(); // Admin SDK Timestamp
     const d = new Date(value);
     return isNaN(d.getTime()) ? null : d;
   }
 
   // Format Firestore document to Product
-  private formatProduct(doc: FirebaseFirestore.DocumentSnapshot, variants?: ProductVariant[]): Product {
+  private formatProduct(doc: admin.firestore.DocumentSnapshot, variants?: ProductVariant[]): Product {
     const data = doc.data()!;
     const createdDate     = this.toDate(data.createdAt);
     const updatedDate     = this.toDate(data.updatedAt);

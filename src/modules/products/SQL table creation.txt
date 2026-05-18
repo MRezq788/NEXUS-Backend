@@ -1,0 +1,24 @@
+create extension if not exists vector
+with schema extensions;
+
+CREATE TABLE product_embeddings (
+  id BIGSERIAL PRIMARY KEY,
+  warehouse_id TEXT NOT NULL,
+  product_id TEXT NOT NULL,
+  semantic_text TEXT NOT NULL,
+  embedding VECTOR(1536),  -- text-embedding-3-small produces 1536 dimensions
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  
+  -- Ensure one embedding per product per warehouse
+  UNIQUE(warehouse_id, product_id)
+);
+
+-- Create index for similarity search (cosine distance)
+CREATE INDEX idx_product_embeddings_embedding 
+ON product_embeddings 
+USING ivfflat (embedding vector_cosine_ops);
+
+-- Optional: index for warehouse lookups
+CREATE INDEX idx_product_embeddings_warehouse 
+ON product_embeddings(warehouse_id);
