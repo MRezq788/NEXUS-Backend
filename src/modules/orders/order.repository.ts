@@ -19,6 +19,7 @@ interface IncomingOrder {
     lineTotal?: number;
   }[];
   total: number;
+
 }
 
 export const createOrdersRepo = async (orders: IncomingOrder[]) => {

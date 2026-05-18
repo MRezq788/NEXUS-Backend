@@ -22,6 +22,12 @@ import {
   returnInventoryFromCashierService,
   getAllocationHistoryService,
   createCashierPosSaleService,
+  createBusinessOwnerStoreService,
+  updateStoreAiAssistantService,
+  listBusinessOwnerStoresService,
+  listOwnerProductsForStoreAllocationService,
+  listStoreAllocatedProductsService,
+  allocateProductToStoreService,
 } from "./user.service";
 
 export const getUserSoldTotalController = async (
@@ -608,6 +614,240 @@ export const createCashierPosSaleController = async (
       return;
     }
 
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const listBusinessOwnerStoresController = async (
+  req: Request | any,
+  res: Response,
+): Promise<void> => {
+  try {
+    const ownerEmail = req.user?.email as string | undefined;
+
+    if (!ownerEmail) {
+      res.status(401).json({
+        success: false,
+        message: "Unauthorized: No authenticated user found.",
+      });
+      return;
+    }
+
+    const stores = await listBusinessOwnerStoresService(ownerEmail);
+
+    res.status(200).json({
+      success: true,
+      message: "Stores fetched successfully",
+      data: { stores },
+    });
+  } catch (error: any) {
+    console.error("Error in listBusinessOwnerStores controller:", error);
+    if (error.message.includes("Business Logic Error")) {
+      res.status(400).json({ success: false, message: error.message });
+      return;
+    }
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const createBusinessOwnerStoreController = async (
+  req: Request | any,
+  res: Response,
+): Promise<void> => {
+  try {
+    const ownerEmail = req.user?.email as string | undefined;
+    const { siteName, storeDisplayName } = req.body as {
+      siteName?: string;
+      storeDisplayName?: string;
+    };
+
+    if (!ownerEmail) {
+      res.status(401).json({
+        success: false,
+        message: "Unauthorized: No authenticated user found.",
+      });
+      return;
+    }
+
+    if (!siteName) {
+      res.status(400).json({
+        success: false,
+        message: "siteName is required.",
+      });
+      return;
+    }
+
+    const store = await createBusinessOwnerStoreService(
+      ownerEmail,
+      siteName,
+      storeDisplayName,
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "Store created successfully",
+      data: { store },
+    });
+  } catch (error: any) {
+    console.error("Error in createBusinessOwnerStore controller:", error);
+    if (error.message.includes("Business Logic Error")) {
+      res.status(400).json({ success: false, message: error.message });
+      return;
+    }
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const updateStoreAiAssistantController = async (
+  req: Request | any,
+  res: Response,
+): Promise<void> => {
+  try {
+    const ownerEmail = req.user?.email as string | undefined;
+    const siteName = req.params.siteName as string;
+    const { enabled, systemPrompt } = req.body as {
+      enabled?: boolean;
+      systemPrompt?: string;
+    };
+
+    if (!ownerEmail) {
+      res.status(401).json({
+        success: false,
+        message: "Unauthorized: No authenticated user found.",
+      });
+      return;
+    }
+
+    const store = await updateStoreAiAssistantService(ownerEmail, siteName, {
+      enabled: Boolean(enabled),
+      systemPrompt: typeof systemPrompt === "string" ? systemPrompt : "",
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Store AI assistant settings updated successfully",
+      data: { store },
+    });
+  } catch (error: any) {
+    console.error("Error in updateStoreAiAssistantController:", error);
+    if (error.message.includes("Business Logic Error")) {
+      res.status(400).json({ success: false, message: error.message });
+      return;
+    }
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const listOwnerProductsForStoreAllocationController = async (
+  req: Request | any,
+  res: Response,
+): Promise<void> => {
+  try {
+    const ownerEmail = req.user?.email as string | undefined;
+
+    if (!ownerEmail) {
+      res.status(401).json({
+        success: false,
+        message: "Unauthorized: No authenticated user found.",
+      });
+      return;
+    }
+
+    const products = await listOwnerProductsForStoreAllocationService(ownerEmail);
+    res.status(200).json({
+      success: true,
+      message: "Owner products fetched successfully",
+      data: { products },
+    });
+  } catch (error: any) {
+    console.error("Error in listOwnerProductsForStoreAllocationController:", error);
+    if (error.message.includes("Business Logic Error")) {
+      res.status(400).json({ success: false, message: error.message });
+      return;
+    }
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const listStoreAllocatedProductsController = async (
+  req: Request | any,
+  res: Response,
+): Promise<void> => {
+  try {
+    const ownerEmail = req.user?.email as string | undefined;
+    const siteName = req.params.siteName as string;
+
+    if (!ownerEmail) {
+      res.status(401).json({
+        success: false,
+        message: "Unauthorized: No authenticated user found.",
+      });
+      return;
+    }
+
+    const products = await listStoreAllocatedProductsService(ownerEmail, siteName);
+    res.status(200).json({
+      success: true,
+      message: "Allocated store products fetched successfully",
+      data: { products },
+    });
+  } catch (error: any) {
+    console.error("Error in listStoreAllocatedProductsController:", error);
+    if (error.message.includes("Business Logic Error")) {
+      res.status(400).json({ success: false, message: error.message });
+      return;
+    }
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const allocateProductToStoreController = async (
+  req: Request | any,
+  res: Response,
+): Promise<void> => {
+  try {
+    const ownerEmail = req.user?.email as string | undefined;
+    const { siteName, productId, variantId, quantity } = req.body as {
+      siteName?: string;
+      productId?: string;
+      variantId?: string;
+      quantity?: number;
+    };
+
+    if (!ownerEmail) {
+      res.status(401).json({
+        success: false,
+        message: "Unauthorized: No authenticated user found.",
+      });
+      return;
+    }
+
+    if (!siteName || !productId || !variantId) {
+      res.status(400).json({
+        success: false,
+        message: "siteName, productId and variantId are required.",
+      });
+      return;
+    }
+
+    const result = await allocateProductToStoreService(ownerEmail, {
+      siteName,
+      productId,
+      variantId,
+      quantity: Number(quantity),
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Product allocated to store successfully",
+      data: result,
+    });
+  } catch (error: any) {
+    console.error("Error in allocateProductToStoreController:", error);
+    if (error.message.includes("Business Logic Error")) {
+      res.status(400).json({ success: false, message: error.message });
+      return;
+    }
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 };

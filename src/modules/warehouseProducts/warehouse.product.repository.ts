@@ -1,6 +1,7 @@
 import * as admin from 'firebase-admin';
 import { adminDb } from '../../core/config/adminFirebase';
 import { Product, ProductVariant, ProductStatus, computeStatus, formatDate } from './warehouse.product.model';
+import { propagateOwnerProductToAllocatedSites } from '../siteProductVectors/siteProductVectorSync';
 
 // Get user's products subcollection reference
 function getUserProductsCollection(userEmail: string) {
@@ -253,7 +254,15 @@ export class ProductRepository {
       return { id: vDoc.id, ...vData } as ProductVariant;
     });
 
-    return this.formatProduct(updated, variants);
+    const formattedProduct = this.formatProduct(updated, variants);
+
+    try {
+      await propagateOwnerProductToAllocatedSites(userEmail, id);
+    } catch (error) {
+      console.error('Allocated site product sync failed:', error);
+    }
+
+    return formattedProduct;
   }
 
   // Delete single product

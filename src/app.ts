@@ -29,6 +29,7 @@ import uploadRoutes from "./modules/uploads/upload.routes";
 import reportRoutes from "./modules/reports/report.routes";
 import warehouseProductRoutes from "./modules/WarehouseShopProducts/warehouseProduct.routes";
 import { addProductRouter, shopProductsRouter } from "./modules/products/product.routes";
+import storefrontRoutes from "./modules/storefront/storefront.routes";
 
 // Use routes
 app.use("/api/users", userRoutes);
@@ -46,6 +47,7 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/add-product", addProductRouter);
 app.use("/api/shop-products", shopProductsRouter);
+app.use("/api/storefront", storefrontRoutes);
 
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });

@@ -116,7 +116,7 @@ export async function syncProductEmbedding(
 
     // console.log(`[Embedding] Saved embedding for product ${product.id}`);
   } catch (error) {
-    console.error(`[Embedding] Failed for product ${product.id}:`, error);
+    console.error('[Embedding] Failed for product', product.id, error);
   }
 }
 

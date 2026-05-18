@@ -193,7 +193,7 @@ export class OrderService {
           ownerProductAccessAt,
         });
       } catch (error) {
-        console.error(`Failed to mirror status for buyer order ${id} (${order.buyer})`, error);
+        console.error('Failed to mirror status for buyer order', { id, buyer: order.buyer }, error);
       }
     }
 
