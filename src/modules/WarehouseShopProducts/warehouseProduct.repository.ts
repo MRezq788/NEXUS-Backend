@@ -6,22 +6,31 @@ const SUBCOLLECTION_NAME = "products";
 interface RepoParams {
   email: string;
   limit: number;
+  offset?: number;
   startAfter?: string;
   search?: string;
+}
+
+export interface ProductResult {
+  id: string;
+  [key: string]: any;
 }
 
 export const getProduct = async ({
   email,
   limit,
+  offset,
   startAfter,
   search,
 }: RepoParams) => {
   try {
-    // 1. Start the query using the Admin SDK syntax
-    let q: FirebaseFirestore.Query = adminDb
+    const productsRef = adminDb
       .collection(COLLECTION_NAME)
       .doc(email)
       .collection(SUBCOLLECTION_NAME);
+
+    // 1. Start the query using the Admin SDK syntax
+    let q: FirebaseFirestore.Query = productsRef;
 
     // 2. Apply search and sorting
     if (search) {
@@ -36,7 +45,12 @@ export const getProduct = async ({
     }
 
     if (startAfter) {
-      q = q.startAfter(startAfter);
+      const cursorDoc = await productsRef.doc(startAfter).get();
+      if (cursorDoc.exists) {
+        q = q.startAfter(cursorDoc);
+      }
+    } else if (offset && offset > 0) {
+      q = q.offset(offset);
     }
 
     q = q.limit(limit);
@@ -106,7 +120,7 @@ export const getProduct = async ({
       }),
     );
 
-    return results.filter(Boolean) as any[];
+    return results.filter(Boolean) as ProductResult[];
   } catch (err) {
     console.error("Firestore Admin SDK query failed:", err);
     throw new Error("Failed to query Firestore");

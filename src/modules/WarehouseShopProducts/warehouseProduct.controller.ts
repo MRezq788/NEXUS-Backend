@@ -10,10 +10,12 @@ export const getProduct = async (req: Request, res: Response) => {
     }
 
     const limitParam = req.query.limit;
+    const pageParam = req.query.page;
     const startAfterParam = req.query.startAfter;
     const searchParam = req.query.search;
 
     let limit: number | undefined;
+    let page: number | undefined;
     let startAfter: string | undefined;
     let search: string | undefined;
 
@@ -23,6 +25,14 @@ export const getProduct = async (req: Request, res: Response) => {
         return errorResponse(res, 'limit must be a number');
       }
       limit = parsed;
+    }
+
+    if (pageParam !== undefined) {
+      const parsed = Number(pageParam);
+      if (isNaN(parsed)) {
+        return errorResponse(res, 'page must be a number');
+      }
+      page = parsed;
     }
 
     if (startAfterParam !== undefined) {
@@ -36,6 +46,7 @@ export const getProduct = async (req: Request, res: Response) => {
     const result = await service.fetchProduct({
       email,
       limit,
+      page,
       startAfter,
       search,
     });
