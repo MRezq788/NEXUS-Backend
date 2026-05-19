@@ -9,12 +9,15 @@ const ai = new GoogleGenAI({apiKey: process.env.VITE_GOOGLE_AI_KEY!});
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
-const RECOMMENDATION_TOP_K = 50; // Variable: change this anytime
+const RECOMMENDATION_TOP_K = 8;
+const MIN_RECOMMENDATION_SIMILARITY = 0.6;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface OrderProduct {
   productId: string;
+  productName?: string;
+  variantAttributes?: Record<string, string>;
   [key: string]: any;
 }
 
@@ -24,6 +27,11 @@ interface WarehouseOrder {
   executorType: string;
   products: OrderProduct[];
   [key: string]: any;
+}
+
+interface UserSemanticContext {
+  text: string;
+  purchasedProductKeys: Set<string>;
 }
 
 export interface RecommendedProduct {
@@ -73,14 +81,24 @@ async function getProductDetailsForSemantic(
 
 async function buildUserSemanticText(
   orders: WarehouseOrder[]
-): Promise<string> {
+): Promise<UserSemanticContext> {
   // Extract unique product IDs with their warehouse (executorId)
-  const uniqueProducts = new Map<string, string>(); // productId -> warehouseId
+  const uniqueProducts = new Map<
+    string,
+    { warehouseId: string; productId: string; orderProduct: OrderProduct }
+  >();
 
   for (const order of orders) {
     for (const product of order.products) {
-      if (!uniqueProducts.has(product.productId)) {
-        uniqueProducts.set(product.productId, order.executorId);
+      if (!order.executorId || !product.productId) continue;
+
+      const key = `${order.executorId}::${product.productId}`;
+      if (!uniqueProducts.has(key)) {
+        uniqueProducts.set(key, {
+          warehouseId: order.executorId,
+          productId: product.productId,
+          orderProduct: product,
+        });
       }
     }
   }
@@ -89,7 +107,7 @@ async function buildUserSemanticText(
   const semanticParts: string[] = [];
   semanticParts.push("User purchase history:");
 
-  for (const [productId, warehouseId] of uniqueProducts) {
+  for (const { productId, warehouseId, orderProduct } of uniqueProducts.values()) {
     const details = await getProductDetailsForSemantic(warehouseId, productId);
     if (details) {
       const attrText = details.attributes
@@ -98,12 +116,34 @@ async function buildUserSemanticText(
         .join('. ') || '';
       
       semanticParts.push(
-        `- ${details.name} (${details.category})${attrText ? `. ${attrText}` : ''}`
+        [
+          `- Product Name: ${details.name}`,
+          `Category: ${details.category || 'Unknown'}`,
+          details.description ? `Description: ${details.description}` : '',
+          attrText,
+        ].filter(Boolean).join('. ')
       );
+      continue;
+    }
+
+    const fallbackParts = [
+      orderProduct.productName ? `- Product Name: ${orderProduct.productName}` : '',
+      orderProduct.variantAttributes
+        ? `Variant: ${Object.entries(orderProduct.variantAttributes)
+            .map(([key, value]) => `${key}: ${value}`)
+            .join(', ')}`
+        : '',
+    ].filter(Boolean);
+
+    if (fallbackParts.length > 0) {
+      semanticParts.push(fallbackParts.join('. '));
     }
   }
 
-  return semanticParts.join('\n');
+  return {
+    text: semanticParts.length > 1 ? semanticParts.join('\n') : '',
+    purchasedProductKeys: new Set(uniqueProducts.keys()),
+  };
 }
 
 // ─── Helper: Generate Embedding ──────────────────────────────────────────────
@@ -125,13 +165,14 @@ async function generateEmbedding(text: string): Promise<number[]> {
 
 async function getSimilarProductsFromSupabase(
   embedding: number[],
-  topK: number
+  topK: number,
+  minSimilarity: number
 ): Promise<{ warehouse_id: string; product_id: string; similarity: number }[]> {
   // Use Supabase RPC for vector similarity search
   // You need to create this function in Supabase first (see below)
   const { data, error } = await supabase.rpc('match_products', {
     query_embedding: embedding,
-    match_threshold: 0.0, // Return all, we'll limit by topK
+    match_threshold: minSimilarity,
     match_count: topK,
   });
 
@@ -140,7 +181,16 @@ async function getSimilarProductsFromSupabase(
     return [];
   }
 
-  return data || [];
+  return (data || [])
+    .filter((match: { similarity?: number }) =>
+      typeof match.similarity === 'number' && match.similarity >= minSimilarity
+    )
+    .sort(
+      (
+        a: { similarity: number },
+        b: { similarity: number },
+      ) => b.similarity - a.similarity,
+    );
 }
 
 // ─── Helper: Cold Start — Get Recent Products ────────────────────────────────
@@ -310,35 +360,58 @@ export async function getRecommendationsRepo(
     ...doc.data(),
   })) as WarehouseOrder[];
 
+  const relevantOrders = orders.filter(
+    (order) =>
+      order.executorType === 'warehouse' &&
+      order.type === 'bought' &&
+      order.status !== 'cancelled' &&
+      Array.isArray(order.products) &&
+      order.products.length > 0,
+  );
+
   // 2. Cold start: no warehouse orders
-  if (orders.length === 0) {
+  if (relevantOrders.length === 0) {
     console.log(`[Recommendations] No warehouse orders for ${userId}, using cold start`);
     return getColdStartProducts(topK);
   }
 
   // 3. Build user semantic text from unique products
-  const userSemanticText = await buildUserSemanticText(orders);
+  const { text: userSemanticText, purchasedProductKeys } = await buildUserSemanticText(relevantOrders);
   console.log(`[Recommendations] User semantic:\n${userSemanticText}`);
+
+  if (!userSemanticText) {
+    console.log(`[Recommendations] Could not build user context from past orders for ${userId}`);
+    return [];
+  }
 
   // 4. Generate embedding
   const userEmbedding = await generateEmbedding(userSemanticText);
 
   // 5. Query Supabase for similar products
-  const similarProducts = await getSimilarProductsFromSupabase(userEmbedding, topK);
+  const similarProducts = await getSimilarProductsFromSupabase(
+    userEmbedding,
+    topK * 3,
+    MIN_RECOMMENDATION_SIMILARITY,
+  );
 
   if (similarProducts.length === 0) {
-    console.log(`[Recommendations] No similar products found, falling back to cold start`);
-    return getColdStartProducts(topK);
+    console.log(`[Recommendations] No similar products found for ${userId}`);
+    return [];
   }
 
   // 6. Fetch full product details from Firestore
   const recommendedProducts: RecommendedProduct[] = [];
   
   for (const match of similarProducts) {
+    const productKey = `${match.warehouse_id}::${match.product_id}`;
+    if (purchasedProductKeys.has(productKey)) continue;
+
     const product = await fetchFullProduct(match.warehouse_id, match.product_id);
     if (product) {
       recommendedProducts.push(product);
     }
+
+    if (recommendedProducts.length === topK) break;
   }
 
   // Handle case where fewer than topK products were found
