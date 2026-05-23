@@ -17,10 +17,12 @@ import {
   updateCartController,
   updatePageController,
   updateWishlistController,
+  aiBuilderController,
 } from "./storefront.controller";
 
 const router = Router();
 
+router.post("/sites/:siteName/ai-builder", aiBuilderController);
 router.get("/sites/:siteName/settings", getSiteSettingsController);
 router.get("/sites/:siteName/pages", listPagesController);
 router.post("/sites/:siteName/pages", createPageController);

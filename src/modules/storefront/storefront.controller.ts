@@ -1,5 +1,6 @@
 ﻿import { Request, Response } from "express";
 import { storefrontService } from "./storefront.service";
+import { runAiBuilder } from "./aiBuilder.service";
 
 const asParam = (value: string | string[] | undefined) =>
   Array.isArray(value) ? value[0] || "" : value || "";
@@ -7,6 +8,26 @@ const asParam = (value: string | string[] | undefined) =>
 const handleError = (res: Response, error: unknown) => {
   const message = error instanceof Error ? error.message : "Unexpected error";
   return res.status(400).json({ success: false, message });
+};
+
+export const aiBuilderController = async (req: Request, res: Response) => {
+  try {
+    const siteName = asParam(req.params.siteName);
+    const { prompt, currentPages, activePageId } = req.body as {
+      prompt?: string;
+      currentPages?: any[];
+      activePageId?: string;
+    };
+
+    if (!prompt) {
+      return res.status(400).json({ success: false, message: "prompt is required" });
+    }
+
+    const pages = await runAiBuilder(prompt, currentPages || [], activePageId, siteName);
+    return res.json({ success: true, data: pages });
+  } catch (error) {
+    return handleError(res, error);
+  }
 };
 
 export const getSiteSettingsController = async (req: Request, res: Response) => {
