@@ -1,7 +1,8 @@
 import { ChatMistralAI } from "@langchain/mistralai";
 import { Annotation, StateGraph, START, END } from "@langchain/langgraph";
 import { PUCK_COMPONENT_CONTEXT } from "./aiBuilder.context";
-import { AiRouterOutputSchema } from "./aiBuilder.schema";
+import { AiPageArraySchema, AiRouterOutputSchema } from "./aiBuilder.schema";
+import { z } from "zod";
 
 // --- State Definition ---
 
@@ -12,6 +13,8 @@ const GraphState = Annotation.Root({
   targetPath: Annotation<"CREATE_SITE" | "EDIT_PAGE" | "CREATE_PAGE" | undefined>(),
   generatedPages: Annotation<any[]>(),
   rawGeneratedContent: Annotation<string>(),
+  validationErrors: Annotation<string | null>(),
+  retryCount: Annotation<number>(),
   reasoning: Annotation<string>(),
 });
 
@@ -164,13 +167,12 @@ const reconcileGeneratedPages = (
 };
 
 // --- Model Setup ---
-
 const getModel = () => {
-  const apiKey = process.env.MISTRAL_API_KEY;
+  const apiKey =process.env.MISTRAL_API_KEY ;//|| process.env.GOOGLE_API_KEY ;
   const modelName = process.env.AI_BUILDER_MODEL || "mistral-small-latest";
 
   if (!apiKey) {
-    throw new Error("MISTRAL_API_KEY is required for AI builder");
+    throw new Error("GOOGLE_API_KEY or VITE_GOOGLE_AI_KEY is required for AI builder");
   }
 
   return new ChatMistralAI({
@@ -207,18 +209,18 @@ const routerNode = async (state: typeof GraphState.State) => {
 };
 
 /**
- * Node 2: Generator
+ * Node 2: Generator (Generic for all paths, branching logic inside or via separate functions)
  */
 const generatorNode = async (state: typeof GraphState.State) => {
   const model = getModel();
   let systemPrompt = "";
-
+  
   if (state.targetPath === "CREATE_SITE") {
     systemPrompt = `You are an expert AI Website Builder. Generate a complete multi-page site at least 3 pages structure using Puck components.
-Available Components Doc: ${PUCK_COMPONENT_CONTEXT}
+  Available Components Doc: ${PUCK_COMPONENT_CONTEXT}
 Return ONLY a JSON array of page objects. Do not return a Puck content array by itself.`;
   } else if (state.targetPath === "EDIT_PAGE") {
-    systemPrompt = `You are an expert AI Website Editor. Modify the current page JSON based on user instructions.
+    systemPrompt = `You are an expert AI Website Editor. Modify the current page JSON based on user instructions. 
 Available Components Doc: ${PUCK_COMPONENT_CONTEXT}
 Current Page ID: ${state.activePageId}
 Current Site Structure: ${JSON.stringify(state.currentPages)}
@@ -236,6 +238,7 @@ Return ONLY the full JSON array of page objects. Do not return components by the
     { role: "user", content: state.prompt },
   ]);
 
+  // Attempt to extract JSON from response
   const content = contentToString(response.content);
   const jsonStr = extractJsonArray(content);
 
@@ -244,12 +247,62 @@ Return ONLY the full JSON array of page objects. Do not return components by the
     return {
       generatedPages: normalizeGeneratedPages(parsed, state),
       rawGeneratedContent: content,
+      retryCount: state.retryCount,
     };
   } catch (e) {
     return {
       generatedPages: [],
       rawGeneratedContent: content,
+      validationErrors: "Invalid JSON format",
+      retryCount: state.retryCount,
     };
+  }
+};
+
+/**
+ * Node 3: Validator
+ */
+const validatorNode = async (state: typeof GraphState.State) => {
+  try {
+    const parsed = AiPageArraySchema.parse(state.generatedPages);
+    return { generatedPages: parsed, validationErrors: null };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return { validationErrors: JSON.stringify(error.flatten()) };
+    }
+    return { validationErrors: "Unknown validation error" };
+  }
+};
+
+/**
+ * Node 4: Fixer
+ */
+const fixerNode = async (state: typeof GraphState.State) => {
+  const model = getModel();
+  const response = await model.invoke([
+    {
+      role: "system",
+      content: `The generated Puck JSON failed validation. Fix it based on the errors provided.
+Available Components Doc: ${PUCK_COMPONENT_CONTEXT}
+Validation Errors: ${state.validationErrors}
+Invalid JSON: ${state.rawGeneratedContent || JSON.stringify(state.generatedPages)}
+Return ONLY the corrected JSON array.`,
+    },
+    { role: "user", content: "Fix the JSON." },
+  ]);
+
+  const content = contentToString(response.content);
+  const jsonStr = extractJsonArray(content);
+
+  try {
+    const parsed = JSON.parse(jsonStr);
+    return {
+      generatedPages: normalizeGeneratedPages(parsed, state),
+      rawGeneratedContent: content,
+      retryCount: state.retryCount + 1,
+    };
+  } catch (e) {
+    return { rawGeneratedContent: content, retryCount: state.retryCount + 1 };
   }
 };
 
@@ -258,9 +311,25 @@ Return ONLY the full JSON array of page objects. Do not return components by the
 const workflow = new StateGraph(GraphState)
   .addNode("router", routerNode)
   .addNode("generator", generatorNode)
+  .addNode("validator", validatorNode)
+  .addNode("fixer", fixerNode)
   .addEdge(START, "router")
   .addEdge("router", "generator")
-  .addEdge("generator", END);
+  .addEdge("generator", "validator")
+  .addConditionalEdges(
+    "validator",
+    (state) => {
+      const maxFixRetries = Number(process.env.AI_BUILDER_FIX_RETRIES || 1);
+      if (!state.validationErrors) return "end";
+      if (state.retryCount >= maxFixRetries) return "end";
+      return "fixer";
+    },
+    {
+      end: END,
+      fixer: "fixer",
+    }
+  )
+  .addEdge("fixer", "validator");
 
 export const aiBuilderGraph = workflow.compile();
 
@@ -274,10 +343,15 @@ export const runAiBuilder = async (prompt: string, currentPages: any[], activePa
     activePageId,
     generatedPages: [],
     rawGeneratedContent: "",
+    validationErrors: null,
+    retryCount: 0,
     reasoning: "",
   };
 
   const result = await aiBuilderGraph.invoke(initialState);
+  if (result.validationErrors) {
+    throw new Error(`AI builder generated invalid page data: ${result.validationErrors}`);
+  }
 
   return reconcileGeneratedPages(
     result.generatedPages,
