@@ -128,18 +128,22 @@ export const getProductController = async (req: Request, res: Response) => {
 
 export const signupController = async (req: Request, res: Response) => {
   try {
-    const { siteName, email, name, password } = req.body as {
+    const { siteName, email, name, password, idToken } = req.body as {
       siteName?: string;
       email?: string;
       name?: string;
       password?: string;
+      idToken?: string;
     };
 
-    if (!siteName || !email || !name || !password) {
-      return res.status(400).json({ success: false, message: "siteName, email, name and password are required" });
+    if (!siteName || !name || (!idToken && (!email || !password))) {
+      return res.status(400).json({
+        success: false,
+        message: "siteName, name and either a Firebase ID token or email/password are required",
+      });
     }
 
-    const user = await storefrontService.signupSiteUser(siteName, email, name, password);
+    const user = await storefrontService.signupSiteUser(siteName, { email, name, password, idToken });
     return res.status(201).json({ success: true, data: user });
   } catch (error) {
     return handleError(res, error);
@@ -148,17 +152,16 @@ export const signupController = async (req: Request, res: Response) => {
 
 export const loginController = async (req: Request, res: Response) => {
   try {
-    const { siteName, email, password } = req.body as {
+    const { siteName, idToken } = req.body as {
       siteName?: string;
-      email?: string;
-      password?: string;
+      idToken?: string;
     };
 
-    if (!siteName || !email || !password) {
-      return res.status(400).json({ success: false, message: "siteName, email and password are required" });
+    if (!siteName || !idToken) {
+      return res.status(400).json({ success: false, message: "siteName and Firebase ID token are required" });
     }
 
-    const user = await storefrontService.loginSiteUser(siteName, email, password);
+    const user = await storefrontService.loginSiteUser(siteName, idToken);
     return res.json({ success: true, data: user });
   } catch (error) {
     return handleError(res, error);
