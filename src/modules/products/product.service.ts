@@ -1,4 +1,12 @@
-import { createProductRepo, getProductsRepo, CreateProductInput, ProductWithVariants } from './product.repository';
+import {
+  createProductRepo,
+  getProductsRepo,
+  getProductWithVariants,
+  updateProductRepo,
+  CreateProductInput,
+  UpdateProductInput,
+  ProductWithVariants,
+} from './product.repository';
 import { getPaginationParams, createPaginatedResult, PaginatedResult } from '../../core/utils/pagination';
 import { getInventoryStatsRepo, InventoryStats } from './product.repository';
 import { getAllWarehouseProductsRepo, WarehouseProduct } from './product.repository';
@@ -20,6 +28,36 @@ export const createProductService = async (
   }
 
   return await createProductRepo(userId, input);
+};
+
+export const getProductService = async (
+  userId: string,
+  productId: string,
+) => {
+  if (!userId) throw new Error('userId is required');
+  if (!productId) throw new Error('productId is required');
+  return await getProductWithVariants(userId, productId);
+};
+
+export const updateProductService = async (
+  userId: string,
+  productId: string,
+  input: UpdateProductInput,
+): Promise<{ variantIdMapping: Record<string, string> }> => {
+  if (!userId) throw new Error('userId is required');
+  if (!productId) throw new Error('productId is required');
+
+  const { name, basePrice, variants } = input;
+
+  if (!name || typeof basePrice !== 'number') {
+    throw new Error('name and basePrice are required');
+  }
+
+  if (!Array.isArray(variants) || variants.length === 0) {
+    throw new Error('At least one variant is required');
+  }
+
+  return await updateProductRepo(userId, productId, input);
 };
 
 export const getProductsService = async (

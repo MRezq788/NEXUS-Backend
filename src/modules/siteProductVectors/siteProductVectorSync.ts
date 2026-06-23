@@ -79,23 +79,39 @@ function searchableText(product: Record<string, unknown>, variants: Array<Record
     .join(" ");
 }
 
-async function upsertSupabaseVector(row: Record<string, unknown>) {
+async function upsertSupabaseVector(
+  row: Record<string, unknown>,
+  context: { siteName: string; productId: string },
+) {
   const supabaseUrl = process.env.SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+  console.log(
+    `[supabase-sync] upsert start site=${context.siteName} product=${context.productId} embeddingLen=${String(
+      row.embedding ?? "",
+    ).length}`,
+  );
+
   if (!supabaseUrl || !serviceRoleKey) {
-    console.warn("Skipping Supabase vector sync: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing.");
+    console.warn(
+      "[supabase-sync] SKIP: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing in process.env.",
+    );
     return;
   }
 
   if (serviceRoleKey === "replace-with-your-supabase-service-role-key") {
-    console.warn("Skipping Supabase vector sync: SUPABASE_SERVICE_ROLE_KEY is still the placeholder value.");
+    console.warn(
+      "[supabase-sync] SKIP: SUPABASE_SERVICE_ROLE_KEY is still the placeholder value.",
+    );
     return;
   }
 
-  const response = await fetch(
-    `${supabaseUrl.replace(/\/$/, "")}/rest/v1/site_product_vectors?on_conflict=site_name,product_id`,
-    {
+  const endpoint = `${supabaseUrl.replace(/\/$/, "")}/rest/v1/site_product_vectors?on_conflict=site_name,product_id`;
+  const keyPreview = `${serviceRoleKey.slice(0, 8)}…${serviceRoleKey.slice(-6)} (len=${serviceRoleKey.length})`;
+
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
       method: "POST",
       headers: {
         apikey: serviceRoleKey,
@@ -104,20 +120,33 @@ async function upsertSupabaseVector(row: Record<string, unknown>) {
         Prefer: "resolution=merge-duplicates",
       },
       body: JSON.stringify(row),
-    },
-  );
+    });
+  } catch (networkErr) {
+    console.error(
+      `[supabase-sync] network failure to ${endpoint} key=${keyPreview}:`,
+      networkErr,
+    );
+    throw networkErr;
+  }
 
   if (!response.ok) {
     const message = await response.text();
+    console.error(
+      `[supabase-sync] non-2xx response status=${response.status} body=${message}`,
+    );
     throw new Error(`Supabase vector sync failed: ${response.status} ${message}`);
   }
+
+  console.log(
+    `[supabase-sync] upsert ok site=${context.siteName} product=${context.productId} status=${response.status}`,
+  );
 }
 
 export async function syncAllocatedSiteProductVector(
   ownerEmail: string,
   siteName: string,
   productId: string,
-) {
+): Promise<{ skipped?: string }> {
   const siteProductRef = db
     .collection("sites")
     .doc(siteName)
@@ -131,7 +160,18 @@ export async function syncAllocatedSiteProductVector(
     siteProductRef.collection("variants").get(),
   ]);
 
-  if (!siteSnap.exists || !productSnap.exists) return;
+  if (!siteSnap.exists) {
+    console.warn(
+      `[supabase-sync] SKIP: site doc missing for site=${siteName}`,
+    );
+    return { skipped: "site-missing" };
+  }
+  if (!productSnap.exists) {
+    console.warn(
+      `[supabase-sync] SKIP: allocated product doc missing for site=${siteName} product=${productId}`,
+    );
+    return { skipped: "product-missing" };
+  }
 
   const owner = toPlainValue(ownerSnap.data() || {}) as Record<string, unknown>;
   const site = toPlainValue(siteSnap.data() || {}) as Record<string, unknown>;
@@ -142,25 +182,34 @@ export async function syncAllocatedSiteProductVector(
   }));
   const totalQuantity = variants.reduce((sum, variant) => sum + (Number(variant.quantity) || 0), 0);
   const text = searchableText(product, variants);
+  const embeddingVector = await createHuggingFaceEmbedding(text);
+  console.log(
+    `[supabase-sync] built payload site=${siteName} product=${productId} variants=${variants.length} textLen=${text.length} embeddingDim=${embeddingVector.length}`,
+  );
 
-  await upsertSupabaseVector({
-    site_name: siteName,
-    owner_email: ownerEmail,
-    product_id: productId,
-    object: {
-      id: productId,
-      siteName,
-      ownerEmail,
-      ownerName: owner.name ?? ownerEmail,
-      site: site.store ?? site,
-      product,
-      variants,
-      totalQuantity,
+  await upsertSupabaseVector(
+    {
+      site_name: siteName,
+      owner_email: ownerEmail,
+      product_id: productId,
+      object: {
+        id: productId,
+        siteName,
+        ownerEmail,
+        ownerName: owner.name ?? ownerEmail,
+        site: site.store ?? site,
+        product,
+        variants,
+        totalQuantity,
+      },
+      searchable_text: text,
+      embedding: vectorToSqlLiteral(embeddingVector),
+      updated_at: new Date().toISOString(),
     },
-    searchable_text: text,
-    embedding: vectorToSqlLiteral(await createHuggingFaceEmbedding(text)),
-    updated_at: new Date().toISOString(),
-  });
+    { siteName, productId },
+  );
+
+  return {};
 }
 
 export async function syncOwnerProductAllocations(

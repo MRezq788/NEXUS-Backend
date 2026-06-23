@@ -503,6 +503,10 @@ export const allocateProductToStoreRepo = async (
       transaction.get(siteProductRef.collection("variants")),
     ]);
 
+    console.log(
+      `[allocate] owner=${ownerEmail} product=${productId} requestedVariantId=${variantId} ownerProductExists=${ownerProductSnap.exists} ownerVariantExists=${ownerVariantSnap.exists} actualOwnerVariantIds=[${ownerVariantsSnap.docs.map((d) => d.id).join(",")}]`,
+    );
+
     if (!ownerSnap.exists) {
       throw new Error("Business Logic Error: Business owner not found.");
     }
@@ -521,6 +525,9 @@ export const allocateProductToStoreRepo = async (
     }
 
     if (!ownerVariantSnap.exists) {
+      console.error(
+        `[allocate] VARIANT MISMATCH owner=${ownerEmail} product=${productId} requested=${variantId} actualIds=[${ownerVariantsSnap.docs.map((d) => d.id).join(",")}]`,
+      );
       throw new Error("Business Logic Error: Variant not found in owner inventory.");
     }
 
