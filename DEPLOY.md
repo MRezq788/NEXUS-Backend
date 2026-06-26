@@ -26,6 +26,9 @@
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `HUGGINGFACE_API_TOKEN`
    - `HUGGINGFACE_EMBEDDING_MODEL`
+   - `VITE_GOOGLE_AI_KEY`  (Gemini key, used by product embeddings / recommendations)
+   - `VITE_SUPABASE_URL2`
+   - `VITE_SUPABASE_PUBLISHABLE_KEY2`
 
    All values come from your local `.env` (which you keep on your machine and never commit).
 
