@@ -1,13 +1,24 @@
-import * as admin from 'firebase-admin';
-import path from 'path';
+import * as admin from "firebase-admin";
 
-// Construct the path to your downloaded JSON key
-const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
+function getPrivateKey(): string {
+  const key = process.env.FIREBASE_PRIVATE_KEY;
+  if (!key) {
+    throw new Error(
+      "FIREBASE_PRIVATE_KEY is not set. Add it to your environment.",
+    );
+  }
+  return key.replace(/\\n/g, "\n");
+}
 
-// Initialize the Admin SDK (prevents re-initialization in dev environments)
+const serviceAccount = {
+  projectId: process.env.FIREBASE_PROJECT_ID,
+  clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+  privateKey: getPrivateKey(),
+};
+
 if (!admin.apps.length) {
   admin.initializeApp({
-    credential: admin.credential.cert(serviceAccountPath),
+    credential: admin.credential.cert(serviceAccount),
   });
 }
 
