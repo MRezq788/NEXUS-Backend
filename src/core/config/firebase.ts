@@ -21,6 +21,7 @@ function getPrivateKey(): string {
     key = key.substring(eqIdx + 1);
   }
 
+  key = key.replace(/\\\\r\\\\n/g, "\n").replace(/\\\\n/g, "\n").replace(/\\\\r/g, "\r");
   key = key.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\\r/g, "\r");
   key = key.replace(/\r\n/g, "\n");
 

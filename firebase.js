@@ -2,29 +2,37 @@ require("dotenv").config();
 const admin = require("firebase-admin");
 
 function getPrivateKey() {
-  const raw = process.env.FIREBASE_PRIVATE_KEY;
+  let raw = process.env.FIREBASE_PRIVATE_KEY;
   if (!raw) {
     throw new Error(
       "FIREBASE_PRIVATE_KEY is not set. Add it in Render -> Environment (paste the value only, no 'FIREBASE_PRIVATE_KEY=' prefix).",
     );
   }
 
+  console.log(
+    `[firebase] raw FIREBASE_PRIVATE_KEY length=${raw.length}, head=${JSON.stringify(raw.substring(0, 80))}, tail=${JSON.stringify(raw.substring(Math.max(0, raw.length - 80)))}`,
+  );
+
   let key = raw.trim();
 
-  if (
+  while (
     (key.startsWith('"') && key.endsWith('"')) ||
     (key.startsWith("'") && key.endsWith("'"))
   ) {
-    key = key.slice(1, -1);
+    key = key.slice(1, -1).trim();
   }
 
-  const eqIdx = key.indexOf("=");
-  if (eqIdx > 0 && key.substring(0, eqIdx).trim() === "FIREBASE_PRIVATE_KEY") {
-    key = key.substring(eqIdx + 1);
+  if (/^FIREBASE_PRIVATE_KEY\s*=/i.test(key)) {
+    key = key.replace(/^FIREBASE_PRIVATE_KEY\s*=\s*/, "");
   }
 
+  key = key.replace(/\\\\r\\\\n/g, "\n").replace(/\\\\n/g, "\n").replace(/\\\\r/g, "\r");
   key = key.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\\r/g, "\r");
   key = key.replace(/\r\n/g, "\n");
+
+  console.log(
+    `[firebase] cleaned FIREBASE_PRIVATE_KEY length=${key.length}, head=${JSON.stringify(key.substring(0, 80))}, tail=${JSON.stringify(key.substring(Math.max(0, key.length - 80)))}`,
+  );
 
   if (
     !key.startsWith("-----BEGIN PRIVATE KEY-----") ||
@@ -40,7 +48,7 @@ function getPrivateKey() {
   }
 
   console.log(
-    `[firebase] FIREBASE_PRIVATE_KEY length=${key.length}, startsWith=${key.startsWith("-----BEGIN PRIVATE KEY-----\n")}, endsWith=${key.endsWith("-----END PRIVATE KEY-----\n")}`,
+    `[firebase] final FIREBASE_PRIVATE_KEY length=${key.length}, startsWith=${key.startsWith("-----BEGIN PRIVATE KEY-----\n")}, endsWith=${key.endsWith("-----END PRIVATE KEY-----\n")}`,
   );
 
   return key;
