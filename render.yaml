@@ -11,15 +11,11 @@ services:
     autoDeploy: true
     envVars:
       - key: NODE_VERSION
-        value: 20
+        value: "20"
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 10000
-        sync: false
-      - key: HOST
-        value: 0.0.0.0
-        sync: false
+      - key: HUGGINGFACE_EMBEDDING_MODEL
+        value: sentence-transformers/all-MiniLM-L6-v2
       - key: FIREBASE_API_KEY
         sync: false
       - key: FIREBASE_AUTH_DOMAIN
@@ -43,7 +39,4 @@ services:
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: HUGGINGFACE_API_TOKEN
-        sync: false
-      - key: HUGGINGFACE_EMBEDDING_MODEL
-        value: sentence-transformers/all-MiniLM-L6-v2
         sync: false
