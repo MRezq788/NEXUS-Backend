@@ -32,6 +32,7 @@ Thumbs.db
 # Stray / scratch files
 tmp.js
 seed.js
+render-private-key.txt
 
 # Render / build artifacts
 .render-build/

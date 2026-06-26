@@ -39,6 +39,10 @@ function getPrivateKey() {
     key += "\n";
   }
 
+  console.log(
+    `[firebase] FIREBASE_PRIVATE_KEY length=${key.length}, startsWith=${key.startsWith("-----BEGIN PRIVATE KEY-----\n")}, endsWith=${key.endsWith("-----END PRIVATE KEY-----\n")}`,
+  );
+
   return key;
 }
 
