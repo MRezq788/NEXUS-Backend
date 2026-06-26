@@ -33,8 +33,7 @@ function getPrivateKey(): string {
 
   if (
     !key.startsWith("-----BEGIN PRIVATE KEY-----") ||
-    !key.endsWith("-----END PRIVATE KEY-----\n") ||
-    !key.includes("\n\n")
+    !key.includes("-----END PRIVATE KEY-----")
   ) {
     throw new Error("FIREBASE_PRIVATE_KEY is malformed after processing.");
   }

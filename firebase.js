@@ -39,14 +39,10 @@ function getPrivateKey() {
 
   if (
     !key.startsWith("-----BEGIN PRIVATE KEY-----") ||
-    !key.endsWith("-----END PRIVATE KEY-----\n") ||
-    !key.includes("\n\n") === false
+    !key.includes("-----END PRIVATE KEY-----")
   ) {
-    console.error(
-      `[firebase] key still malformed. startsWith BEGIN=${key.startsWith("-----BEGIN PRIVATE KEY-----")}, endsWith END=${key.endsWith("-----END PRIVATE KEY-----")}`,
-    );
     throw new Error(
-      "FIREBASE_PRIVATE_KEY is malformed after processing. Check Render -> Environment value.",
+      "FIREBASE_PRIVATE_KEY is malformed after processing.",
     );
   }
 
