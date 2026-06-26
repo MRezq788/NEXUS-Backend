@@ -24,13 +24,14 @@ function getPrivateKey(): string {
   key = key.replace(/\r\n/g, "\n");
 
   if (
-    !key.includes("BEGIN PRIVATE KEY") ||
-    !key.includes("END PRIVATE KEY")
+    !key.startsWith("-----BEGIN PRIVATE KEY-----") ||
+    !key.includes("-----END PRIVATE KEY-----")
   ) {
-    console.error(
-      `[firebase] FIREBASE_PRIVATE_KEY malformed. length=${key.length}`,
-    );
     throw new Error("FIREBASE_PRIVATE_KEY is malformed.");
+  }
+
+  if (!key.endsWith("\n")) {
+    key += "\n";
   }
 
   return key;

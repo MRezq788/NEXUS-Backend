@@ -21,7 +21,7 @@
    - `FIREBASE_APP_ID`
    - `FIREBASE_MEASUREMENT_ID`
    - `FIREBASE_CLIENT_EMAIL`
-   - `FIREBASE_PRIVATE_KEY`  (paste the value with literal `\n` — the app replaces them with real newlines at boot)
+   - `FIREBASE_PRIVATE_KEY`  (must match the `private_key` field from your Firebase service account JSON; paste as a single line with literal `\n` between lines)
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `HUGGINGFACE_API_TOKEN`
@@ -44,7 +44,7 @@
 
 - **Port**: Render sets `PORT` automatically; the app already reads `process.env.PORT` (defaults to `3000`, falls back to Render's `10000`).
 - **Host**: binds to `0.0.0.0` (works on Render).
-- **Firebase private key**: in the Render dashboard, paste the value as a single line with `\n` characters (the app does `key.replace(/\\n/g, '\n')` at boot).
+- **Firebase private key**: this MUST be the `private_key` value from your Firebase service account JSON. The key in your `.env` may look valid but still be wrong — verify it matches the JSON. In the Render dashboard, paste it as a single line with `\n` characters; the app converts them to real newlines and ensures a trailing newline before passing to firebase-admin.
 - **Free plan** services sleep after 15 min of inactivity; first request after sleep takes ~30s. Upgrade to `Starter` ($7/mo) for always-on.
 - **CORS** is currently `origin: true` (reflects all origins). For production you may want to restrict this to your frontend URL — edit `src/app.ts`.
 - **Health check**: Render pings `/health` automatically; keep this route in `src/app.ts`.

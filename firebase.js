@@ -9,10 +9,6 @@ function getPrivateKey() {
     );
   }
 
-  console.log(
-    `[firebase] raw value length=${raw.length}, head=${JSON.stringify(raw.substring(0, 80))}, tail=${JSON.stringify(raw.substring(Math.max(0, raw.length - 80)))}`,
-  );
-
   let key = raw.trim();
 
   if (
@@ -27,30 +23,21 @@ function getPrivateKey() {
     key = key.substring(eqIdx + 1);
   }
 
-  const nlCount = (key.match(/\\n/g) || []).length;
-  console.log(`[firebase] found ${nlCount} literal '\\n' sequences to convert`);
-
   key = key.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\\r/g, "\r");
   key = key.replace(/\r\n/g, "\n");
-
-  console.log(
-    `[firebase] processed key length=${key.length}, head=${JSON.stringify(key.substring(0, 80))}, tail=${JSON.stringify(key.substring(Math.max(0, key.length - 80)))}`,
-  );
 
   if (
     !key.startsWith("-----BEGIN PRIVATE KEY-----") ||
     !key.includes("-----END PRIVATE KEY-----")
   ) {
     throw new Error(
-      "FIREBASE_PRIVATE_KEY is malformed after processing.",
+      "FIREBASE_PRIVATE_KEY is malformed. Re-paste it in Render -> Environment (value only, single line with literal '\\n' characters).",
     );
   }
 
-  const b64body = key
-    .replace("-----BEGIN PRIVATE KEY-----\n", "")
-    .replace("\n-----END PRIVATE KEY-----", "");
-  const decodedLen = Buffer.from(b64body, "base64").length;
-  console.log(`[firebase] base64 body length=${b64body.length}, decoded=${decodedLen} bytes`);
+  if (!key.endsWith("\n")) {
+    key += "\n";
+  }
 
   return key;
 }

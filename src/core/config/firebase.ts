@@ -7,10 +7,6 @@ function getPrivateKey(): string {
     throw new Error("FIREBASE_PRIVATE_KEY is not set.");
   }
 
-  console.log(
-    `[firebase] raw length=${raw.length}, head=${JSON.stringify(raw.substring(0, 80))}, tail=${JSON.stringify(raw.substring(Math.max(0, raw.length - 80)))}`,
-  );
-
   let key = raw.trim();
 
   if (
@@ -25,9 +21,6 @@ function getPrivateKey(): string {
     key = key.substring(eqIdx + 1);
   }
 
-  const nlCount = (key.match(/\\n/g) || []).length;
-  console.log(`[firebase] found ${nlCount} literal '\\n' sequences`);
-
   key = key.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\\r/g, "\r");
   key = key.replace(/\r\n/g, "\n");
 
@@ -35,10 +28,13 @@ function getPrivateKey(): string {
     !key.startsWith("-----BEGIN PRIVATE KEY-----") ||
     !key.includes("-----END PRIVATE KEY-----")
   ) {
-    throw new Error("FIREBASE_PRIVATE_KEY is malformed after processing.");
+    throw new Error("FIREBASE_PRIVATE_KEY is malformed.");
   }
 
-  console.log(`[firebase] processed key OK. length=${key.length}`);
+  if (!key.endsWith("\n")) {
+    key += "\n";
+  }
+
   return key;
 }
 
