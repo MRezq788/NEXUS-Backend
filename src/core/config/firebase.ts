@@ -4,10 +4,12 @@ import admin from "firebase-admin";
 function getPrivateKey(): string {
   const raw = process.env.FIREBASE_PRIVATE_KEY;
   if (!raw) {
-    throw new Error(
-      "FIREBASE_PRIVATE_KEY is not set. Add it in your environment.",
-    );
+    throw new Error("FIREBASE_PRIVATE_KEY is not set.");
   }
+
+  console.log(
+    `[firebase] raw length=${raw.length}, head=${JSON.stringify(raw.substring(0, 80))}, tail=${JSON.stringify(raw.substring(Math.max(0, raw.length - 80)))}`,
+  );
 
   let key = raw.trim();
 
@@ -23,22 +25,21 @@ function getPrivateKey(): string {
     key = key.substring(eqIdx + 1);
   }
 
+  const nlCount = (key.match(/\\n/g) || []).length;
+  console.log(`[firebase] found ${nlCount} literal '\\n' sequences`);
+
   key = key.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\\r/g, "\r");
   key = key.replace(/\r\n/g, "\n");
 
   if (
-    !key.includes("BEGIN PRIVATE KEY") ||
-    !key.includes("END PRIVATE KEY")
+    !key.startsWith("-----BEGIN PRIVATE KEY-----") ||
+    !key.endsWith("-----END PRIVATE KEY-----\n") ||
+    !key.includes("\n\n")
   ) {
-    console.error(
-      `[firebase] FIREBASE_PRIVATE_KEY malformed. length=${key.length}, head=${JSON.stringify(
-        key.substring(0, 80),
-      )}, tail=${JSON.stringify(key.substring(Math.max(0, key.length - 80)))}`,
-    );
-    throw new Error("FIREBASE_PRIVATE_KEY is malformed.");
+    throw new Error("FIREBASE_PRIVATE_KEY is malformed after processing.");
   }
 
-  console.log(`[firebase] FIREBASE_PRIVATE_KEY parsed OK. length=${key.length}`);
+  console.log(`[firebase] processed key OK. length=${key.length}`);
   return key;
 }
 

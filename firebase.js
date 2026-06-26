@@ -9,6 +9,10 @@ function getPrivateKey() {
     );
   }
 
+  console.log(
+    `[firebase] raw value length=${raw.length}, head=${JSON.stringify(raw.substring(0, 80))}, tail=${JSON.stringify(raw.substring(Math.max(0, raw.length - 80)))}`,
+  );
+
   let key = raw.trim();
 
   if (
@@ -23,24 +27,35 @@ function getPrivateKey() {
     key = key.substring(eqIdx + 1);
   }
 
+  const nlCount = (key.match(/\\n/g) || []).length;
+  console.log(`[firebase] found ${nlCount} literal '\\n' sequences to convert`);
+
   key = key.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\\r/g, "\r");
   key = key.replace(/\r\n/g, "\n");
 
+  console.log(
+    `[firebase] processed key length=${key.length}, head=${JSON.stringify(key.substring(0, 80))}, tail=${JSON.stringify(key.substring(Math.max(0, key.length - 80)))}`,
+  );
+
   if (
-    !key.includes("BEGIN PRIVATE KEY") ||
-    !key.includes("END PRIVATE KEY")
+    !key.startsWith("-----BEGIN PRIVATE KEY-----") ||
+    !key.endsWith("-----END PRIVATE KEY-----\n") ||
+    !key.includes("\n\n") === false
   ) {
     console.error(
-      `[firebase] FIREBASE_PRIVATE_KEY malformed. length=${key.length}, head=${JSON.stringify(
-        key.substring(0, 80),
-      )}, tail=${JSON.stringify(key.substring(Math.max(0, key.length - 80)))}`,
+      `[firebase] key still malformed. startsWith BEGIN=${key.startsWith("-----BEGIN PRIVATE KEY-----")}, endsWith END=${key.endsWith("-----END PRIVATE KEY-----")}`,
     );
     throw new Error(
-      "FIREBASE_PRIVATE_KEY is malformed. Re-paste it in Render -> Environment as a SINGLE line with literal '\\n' characters between lines (do not paste with real newlines, do not include the 'FIREBASE_PRIVATE_KEY=' prefix).",
+      "FIREBASE_PRIVATE_KEY is malformed after processing. Check Render -> Environment value.",
     );
   }
 
-  console.log(`[firebase] FIREBASE_PRIVATE_KEY parsed OK. length=${key.length}`);
+  const b64body = key
+    .replace("-----BEGIN PRIVATE KEY-----\n", "")
+    .replace("\n-----END PRIVATE KEY-----", "");
+  const decodedLen = Buffer.from(b64body, "base64").length;
+  console.log(`[firebase] base64 body length=${b64body.length}, decoded=${decodedLen} bytes`);
+
   return key;
 }
 
