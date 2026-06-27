@@ -1,5 +1,4 @@
-﻿import { createHash } from "crypto";
-import { admin, db } from "../../core/config/firebase";
+import { admin, auth, db } from "../../core/config/firebase";
 
 const SITES_COLLECTION = "sites";
 const SITE_USERS_COLLECTION = "siteUsers";
@@ -29,15 +28,118 @@ export interface StorefrontSiteSettings {
 }
 
 const now = () => admin.firestore.Timestamp.now();
-const hashPassword = (password: string) => createHash("sha256").update(password).digest("hex");
 
 const stripPasswordHash = (record: Record<string, unknown>) => {
   const { passwordHash, ...safeRecord } = record as Record<string, unknown>;
   return safeRecord;
 };
 
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
 const toSiteUserId = (siteName: string, email: string) =>
-  `${email.trim().toLowerCase()}_${siteName.trim().toLowerCase()}`;
+  `${normalizeEmail(email)}_${siteName.trim().toLowerCase()}`;
+
+const getFirebaseErrorCode = (error: unknown) => {
+  const coded = error as { code?: string; errorInfo?: { code?: string } };
+  return coded?.code || coded?.errorInfo?.code || "";
+};
+
+const verifySiteUserToken = async (idToken: string) => {
+  const decoded = await auth.verifyIdToken(idToken);
+  const email = decoded.email;
+
+  if (!email) {
+    throw new Error("Firebase account must have an email");
+  }
+
+  return {
+    uid: decoded.uid,
+    email: normalizeEmail(email),
+    name: String(decoded.name || decoded.email || ""),
+  };
+};
+
+const createFirebaseUser = async (email: string, password: string, name: string) => {
+  const normalizedEmail = normalizeEmail(email);
+
+  try {
+    await auth.getUserByEmail(normalizedEmail);
+    throw new Error("Firebase account already exists. Please login first.");
+  } catch (error) {
+    if (getFirebaseErrorCode(error) !== "auth/user-not-found") {
+      throw error;
+    }
+  }
+
+  return auth.createUser({
+    email: normalizedEmail,
+    password,
+    displayName: name,
+  });
+};
+
+const createSiteUserRecord = async (
+  siteName: string,
+  email: string,
+  firebaseUid: string,
+  name: string,
+) => {
+  const normalizedEmail = normalizeEmail(email);
+  const id = toSiteUserId(siteName, normalizedEmail);
+  const userRef = db.collection(SITE_USERS_COLLECTION).doc(id);
+
+  await userRef.set({
+    email: normalizedEmail,
+    name: name || normalizedEmail,
+    siteName,
+    firebaseUid,
+    cart: { items: [] },
+    wishlist: [],
+    savedAddresses: [],
+    createdAt: now(),
+    updatedAt: now(),
+  });
+
+  const createdSnap = await userRef.get();
+  return { id, ...stripPasswordHash(createdSnap.data() as Record<string, unknown>) };
+};
+
+const getOrCreateSiteUserFromFirebase = async (
+  siteName: string,
+  firebaseUid: string,
+  email: string,
+  name?: string,
+) => {
+  const normalizedEmail = normalizeEmail(email);
+  const id = toSiteUserId(siteName, normalizedEmail);
+  const userRef = db.collection(SITE_USERS_COLLECTION).doc(id);
+  const userSnap = await userRef.get();
+
+  if (!userSnap.exists) {
+    return createSiteUserRecord(siteName, normalizedEmail, firebaseUid, name || normalizedEmail);
+  }
+
+  const userData = userSnap.data() as Record<string, unknown>;
+  const updates: Record<string, unknown> = {};
+
+  if (userData.firebaseUid !== firebaseUid) {
+    updates.firebaseUid = firebaseUid;
+  }
+
+  if (!userData.name && name) {
+    updates.name = name;
+  }
+
+  if (Object.keys(updates).length) {
+    await userRef.update({
+      ...updates,
+      updatedAt: now(),
+    });
+  }
+
+  const updatedSnap = await userRef.get();
+  return { id, ...stripPasswordHash(updatedSnap.data() as Record<string, unknown>) };
+};
 
 const siteRef = (siteName: string) => db.collection(SITES_COLLECTION).doc(siteName);
 const pagesRef = (siteName: string) => siteRef(siteName).collection("pages");
@@ -328,8 +430,28 @@ export const getAllocatedProductById = async (siteName: string, productId: strin
   };
 };
 
-export const signupSiteUser = async (siteName: string, email: string, name: string, password: string) => {
-  const id = toSiteUserId(siteName, email);
+export const signupSiteUser = async (
+  siteName: string,
+  input: { idToken?: string; email?: string; name: string; password?: string },
+) => {
+  let firebaseUser: { uid: string; email: string; name: string };
+
+  if (input.idToken) {
+    firebaseUser = await verifySiteUserToken(input.idToken);
+  } else {
+    if (!input.email || !input.password) {
+      throw new Error("Firebase ID token or email and password are required");
+    }
+
+    const createdUser = await createFirebaseUser(input.email, input.password, input.name);
+    firebaseUser = {
+      uid: createdUser.uid,
+      email: normalizeEmail(createdUser.email || input.email),
+      name: createdUser.displayName || input.name,
+    };
+  }
+
+  const id = toSiteUserId(siteName, firebaseUser.email);
   const userRef = db.collection(SITE_USERS_COLLECTION).doc(id);
   const userSnap = await userRef.get();
 
@@ -337,38 +459,12 @@ export const signupSiteUser = async (siteName: string, email: string, name: stri
     throw new Error("Account already exists for this store");
   }
 
-  await userRef.set({
-    email: email.trim().toLowerCase(),
-    name,
-    siteName,
-    passwordHash: hashPassword(password),
-    cart: { items: [] },
-    wishlist: [],
-    savedAddresses: [],
-    createdAt: now(),
-    updatedAt: now(),
-  });
-
-  const createdSnap = await userRef.get();
-  return { id, ...stripPasswordHash(createdSnap.data() as Record<string, unknown>) };
+  return createSiteUserRecord(siteName, firebaseUser.email, firebaseUser.uid, input.name || firebaseUser.name);
 };
 
-export const loginSiteUser = async (siteName: string, email: string, password: string) => {
-  const id = toSiteUserId(siteName, email);
-  const userRef = db.collection(SITE_USERS_COLLECTION).doc(id);
-  const userSnap = await userRef.get();
-
-  if (!userSnap.exists) {
-    throw new Error("Account not found");
-  }
-
-  const userData = userSnap.data() as { passwordHash?: string } & Record<string, unknown>;
-
-  if ((userData.passwordHash || "") !== hashPassword(password)) {
-    throw new Error("Invalid credentials");
-  }
-
-  return { id, ...stripPasswordHash(userData) };
+export const loginSiteUser = async (siteName: string, idToken: string) => {
+  const firebaseUser = await verifySiteUserToken(idToken);
+  return getOrCreateSiteUserFromFirebase(siteName, firebaseUser.uid, firebaseUser.email, firebaseUser.name);
 };
 
 export const getSiteUser = async (siteName: string, email: string) => {

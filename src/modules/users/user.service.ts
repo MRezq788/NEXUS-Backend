@@ -414,11 +414,33 @@ export const allocateProductToStoreService = async (
     quantity: payload.quantity,
   });
 
+  let supabaseSync:
+    | { status: "synced" }
+    | { status: "skipped"; reason: string }
+    | { status: "failed"; error: string } = {
+    status: "skipped",
+    reason: "not-attempted",
+  };
+
   try {
-    await syncAllocatedSiteProductVector(ownerEmail, normalizedSiteName, payload.productId);
+    const syncOutcome = await syncAllocatedSiteProductVector(
+      ownerEmail,
+      normalizedSiteName,
+      payload.productId,
+    );
+    if (syncOutcome?.skipped) {
+      supabaseSync = { status: "skipped", reason: syncOutcome.skipped };
+    } else {
+      supabaseSync = { status: "synced" };
+    }
   } catch (error) {
-    console.error("Supabase allocated product sync failed:", error);
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(
+      `[supabase-sync] allocation succeeded but vector sync FAILED site=${normalizedSiteName} product=${payload.productId}:`,
+      error,
+    );
+    supabaseSync = { status: "failed", error: message };
   }
 
-  return result;
+  return { ...result, supabaseSync };
 };

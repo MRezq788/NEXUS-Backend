@@ -1,13 +1,47 @@
 import { admin } from '../../core/config/firebase';
 import { FieldValue } from 'firebase-admin/firestore';
 import { syncProductEmbedding } from './product.embedding';
+import { propagateOwnerProductToAllocatedSites } from '../siteProductVectors/siteProductVectorSync';
 
 
 const db = admin.firestore();
 
+const INTERNAL_VARIANT_KEYS = new Set([
+  "id",
+  "price",
+  "quantity",
+  "basePrice",
+  "active",
+  "status",
+  "sourceOwnerId",
+  "sourceProductId",
+  "sourceVariantId",
+  "sourceProductRef",
+  "sourceVariantRef",
+  "createdAt",
+  "updatedAt",
+]);
+
+// Client-side placeholders minted by AddProduct.tsx when (re)building the
+// variants array from the attribute matrix. They must NEVER be persisted as
+// Firestore doc IDs — that's what caused the "Variant not found in owner
+// inventory" failure during allocation, because the allocation page would
+// send the placeholder back and the subcollection lookup would miss.
+const PLACEHOLDER_VARIANT_ID_PATTERNS = [
+  /^default$/i,
+  /^variant-\d+$/i,
+  /^loaded-variant-\d+$/i,
+];
+
+function isPlaceholderVariantId(id: string): boolean {
+  return PLACEHOLDER_VARIANT_ID_PATTERNS.some((pattern) => pattern.test(id));
+}
+
 export interface ProductVariant {
+  id?: string;
   price: number;
   quantity: number;
+  attributes?: Record<string, string | number | boolean>;
   [key: string]: any;
 }
 
@@ -26,6 +60,8 @@ export interface CreateProductInput {
   variants: ProductVariant[];
   active: boolean;
 }
+
+export type UpdateProductInput = CreateProductInput;
 
 export interface ProductWithVariants {
   id: string;
@@ -209,6 +245,86 @@ export const getProductDetails = async (productId: string, userId: string) => {
   return snapshot.data() || {};
 };
 
+function expandVariantToNested(
+  variantId: string,
+  variantData: Record<string, unknown>,
+  productAttributeNames: Set<string>,
+) {
+  const { price, quantity, attributes, ...rest } = variantData;
+  const rawAttributes =
+    attributes && typeof attributes === "object" && !Array.isArray(attributes)
+      ? (attributes as Record<string, unknown>)
+      : rest;
+
+  const normalizedAttributes: Record<string, string> = {};
+  for (const [key, value] of Object.entries(rawAttributes)) {
+    if (INTERNAL_VARIANT_KEYS.has(key)) continue;
+    if (productAttributeNames.size > 0 && !productAttributeNames.has(key)) continue;
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
+      normalizedAttributes[key] = String(value);
+    }
+  }
+
+  return {
+    id: String(variantId),
+    attributes: normalizedAttributes,
+    price: Number(price ?? 0),
+    quantity: Number(quantity ?? 0),
+  };
+}
+
+export const getProductWithVariants = async (
+  userId: string,
+  productId: string,
+) => {
+  const productRef = db
+    .collection("users")
+    .doc(userId)
+    .collection("products")
+    .doc(productId);
+  const productSnap = await productRef.get();
+
+  if (!productSnap.exists) {
+    return null;
+  }
+
+  const productData = productSnap.data() || {};
+  const variantsSnap = await productRef.collection("variants").get();
+
+  const productAttributes = Array.isArray(productData.attributes)
+    ? (productData.attributes as ProductAttribute[])
+    : [];
+  const productAttributeNames = new Set(
+    productAttributes.map((attribute) => String(attribute.name)),
+  );
+
+  const variants = variantsSnap.docs.map((variantDoc) =>
+    expandVariantToNested(
+      variantDoc.id,
+      variantDoc.data() as Record<string, unknown>,
+      productAttributeNames,
+    ),
+  );
+
+  return {
+    id: productId,
+    name: productData.name ?? "",
+    description: productData.description ?? "",
+    basePrice: productData.basePrice ?? 0,
+    category: productData.category ?? "",
+    images: Array.isArray(productData.images) ? productData.images : [],
+    attributes: productAttributes,
+    active: productData.active ?? true,
+    createdAt: productData.createdAt ?? null,
+    updatedAt: productData.updatedAt ?? null,
+    variants,
+  };
+};
+
 export const createProductRepo = async (
   userId: string,
   input: CreateProductInput
@@ -263,6 +379,96 @@ export const createProductRepo = async (
   }
 
   return productId;
+};
+
+export const updateProductRepo = async (
+  userId: string,
+  productId: string,
+  input: UpdateProductInput,
+): Promise<{ variantIdMapping: Record<string, string> }> => {
+  const productRef = db
+    .collection("users")
+    .doc(userId)
+    .collection("products")
+    .doc(productId);
+
+  const productSnap = await productRef.get();
+  if (!productSnap.exists) {
+    throw new Error("Product not found");
+  }
+
+  const now = FieldValue.serverTimestamp();
+  const batch = db.batch();
+
+  batch.update(productRef, {
+    name: input.name,
+    description: input.description,
+    basePrice: input.basePrice,
+    category: input.category,
+    images: input.images,
+    attributes: input.attributes,
+    active: input.active,
+    updatedAt: now,
+  });
+
+  // Snapshot existing variant doc ids BEFORE we delete them so we can
+  // distinguish "real Firestore doc id from a previous save" from a
+  // client-side placeholder like "variant-0" or "default".
+  const existingVariantsSnap = await productRef.collection("variants").get();
+  const existingVariantIds = new Set(
+    existingVariantsSnap.docs.map((doc) => doc.id),
+  );
+
+  // Drop existing variants so removed attribute combinations disappear cleanly.
+  existingVariantsSnap.docs.forEach((variantDoc) => {
+    batch.delete(variantDoc.ref);
+  });
+
+  const variantIdMapping: Record<string, string> = {};
+
+  for (const variant of input.variants) {
+    const requestedId = typeof variant.id === "string" ? variant.id.trim() : "";
+
+    // Only honor the requested id when it's a real existing Firestore doc id.
+    // Anything else (placeholder, blank, or unknown id) gets a fresh auto-id
+    // so the subcollection always ends up with real, stable Firestore ids
+    // that the allocation page can resolve.
+    const finalId =
+      requestedId &&
+      !isPlaceholderVariantId(requestedId) &&
+      existingVariantIds.has(requestedId)
+        ? requestedId
+        : productRef.collection("variants").doc().id;
+
+    if (requestedId && requestedId !== finalId) {
+      variantIdMapping[requestedId] = finalId;
+    }
+
+    const variantRef = productRef.collection("variants").doc(finalId);
+
+    const { id: _ignoredId, price, quantity, attributes, ...rest } = variant;
+    batch.set(variantRef, {
+      ...(attributes || {}),
+      ...rest,
+      price,
+      quantity,
+    });
+  }
+
+  await batch.commit();
+
+  // Refresh every site copy and Supabase vector where this product is allocated
+  // so the storefront and bot stay aligned with the latest owner data.
+  try {
+    await propagateOwnerProductToAllocatedSites(userId, productId);
+  } catch (err) {
+    console.error(
+      `Propagate to allocated sites failed for product ${productId}:`,
+      err,
+    );
+  }
+
+  return { variantIdMapping };
 };
 
 export interface InventoryStats {
