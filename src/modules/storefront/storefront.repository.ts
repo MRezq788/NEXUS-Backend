@@ -35,6 +35,11 @@ const stripPasswordHash = (record: Record<string, unknown>) => {
 };
 
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
+const normalizePageSlug = (pageSlug: string) =>
+  pageSlug
+    .trim()
+    .toLowerCase()
+    .replace(/^\/+|\/+$/g, "");
 
 const toSiteUserId = (siteName: string, email: string) =>
   `${normalizeEmail(email)}_${siteName.trim().toLowerCase()}`;
@@ -232,7 +237,7 @@ export const listPages = async (siteName: string): Promise<SitePageRecord[]> => 
 export const createPage = async (siteName: string, pageName: string, pageSlug: string) => {
   await getOrCreateSite(siteName);
 
-  const normalizedSlug = pageSlug.trim().toLowerCase();
+  const normalizedSlug = normalizePageSlug(pageSlug);
   const isHomepage = normalizedSlug === "" || normalizedSlug === "home";
 
   const page = pagesRef(siteName).doc();
@@ -274,8 +279,9 @@ export const updatePage = async (
   }
 
   const pageSlug = payload.pageSlug === undefined ? undefined : payload.pageSlug.trim().toLowerCase();
+  const normalizedPageSlug = pageSlug === undefined ? undefined : normalizePageSlug(pageSlug);
 
-  if (payload.isHomepage || pageSlug === "" || pageSlug === "home") {
+  if (payload.isHomepage || normalizedPageSlug === "" || normalizedPageSlug === "home") {
     const allPages = await pagesRef(siteName).get();
 
     await Promise.all(
@@ -293,10 +299,10 @@ export const updatePage = async (
 
   await page.update({
     ...(payload.pageName !== undefined ? { pageName: payload.pageName } : {}),
-    ...(pageSlug !== undefined
+    ...(normalizedPageSlug !== undefined
       ? {
-          pageSlug: pageSlug === "home" ? "" : pageSlug,
-          isHomepage: pageSlug === "" || pageSlug === "home",
+          pageSlug: normalizedPageSlug === "home" ? "" : normalizedPageSlug,
+          isHomepage: normalizedPageSlug === "" || normalizedPageSlug === "home",
         }
       : {}),
     ...(payload.isHomepage !== undefined ? { isHomepage: payload.isHomepage } : {}),
@@ -334,14 +340,24 @@ export const getHomepage = async (siteName: string) => {
 };
 
 export const getPageBySlug = async (siteName: string, pageSlug: string) => {
-  const normalized = pageSlug.trim().toLowerCase();
+  const normalized = normalizePageSlug(pageSlug);
   const snapshot = await pagesRef(siteName).where("pageSlug", "==", normalized).limit(1).get();
 
-  if (snapshot.empty) {
+  if (!snapshot.empty) {
+    const pageDoc = snapshot.docs[0];
+    return {
+      id: pageDoc.id,
+      ...(pageDoc.data() as Record<string, unknown>),
+    };
+  }
+
+  const legacySnapshot = await pagesRef(siteName).where("pageSlug", "==", `/${normalized}`).limit(1).get();
+
+  if (legacySnapshot.empty) {
     return null;
   }
 
-  const pageDoc = snapshot.docs[0];
+  const pageDoc = legacySnapshot.docs[0];
   return {
     id: pageDoc.id,
     ...(pageDoc.data() as Record<string, unknown>),
