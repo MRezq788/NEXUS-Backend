@@ -23,7 +23,7 @@ interface IncomingOrder {
 }
 
 export const createOrdersRepo = async (orders: IncomingOrder[]) => {
-  // Use Admin SDK batch
+  // Use Admin SDK batc
   const batch = adminDb.batch();
 
   orders.forEach((order) => {
