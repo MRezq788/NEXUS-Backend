@@ -457,6 +457,21 @@ export const updateProductRepo = async (
 
   await batch.commit();
 
+  const userRef = db.collection('users').doc(userId);
+  const userSnap = await userRef.get();
+  if (userSnap.data()?.role === 'warehouse') {
+    // Sync embedding to Supabase
+    syncProductEmbedding(userId, {
+      id: productId,
+      name: input.name,
+      description: input.description,
+      category: input.category,
+      attributes: input.attributes,
+    }).catch((err) => {
+      console.error('Embedding sync failed (non-blocking):', err);
+    });
+  }
+
   // Refresh every site copy and Supabase vector where this product is allocated
   // so the storefront and bot stay aligned with the latest owner data.
   try {
