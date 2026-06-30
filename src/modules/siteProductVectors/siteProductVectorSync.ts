@@ -1,5 +1,8 @@
 import { admin } from "../../core/config/firebase";
-import { createHuggingFaceEmbedding, vectorToSqlLiteral } from "../../core/utils/huggingFaceEmbedding";
+import {
+  createHuggingFaceEmbedding,
+  vectorToSqlLiteral,
+} from "../../core/utils/huggingFaceEmbedding";
 
 const db = admin.firestore();
 const usersCollection = db.collection("users");
@@ -38,20 +41,29 @@ function toPlainValue(value: unknown): unknown {
 }
 
 function variantAttributes(variant: Record<string, unknown>) {
+  // Filter out internal keys and non-primitive values
   return Object.fromEntries(
     Object.entries(variant).filter(([key, value]) => {
-      return !INTERNAL_VARIANT_KEYS.has(key) && ["string", "number", "boolean"].includes(typeof value);
+      return (
+        !INTERNAL_VARIANT_KEYS.has(key) &&
+        ["string", "number", "boolean"].includes(typeof value)
+      );
     }),
   );
 }
 
-function searchableText(product: Record<string, unknown>, variants: Array<Record<string, unknown>>) {
+function searchableText(
+  product: Record<string, unknown>,
+  variants: Array<Record<string, unknown>>,
+) {
   const attributes = Array.isArray(product.attributes)
     ? product.attributes
         .map((attribute) => {
           if (!attribute || typeof attribute !== "object") return "";
           const data = attribute as { name?: unknown; values?: unknown };
-          const values = Array.isArray(data.values) ? data.values.join(" ") : "";
+          const values = Array.isArray(data.values)
+            ? data.values.join(" ")
+            : "";
           return `${data.name ?? ""} ${values}`;
         })
         .join(" ")
@@ -75,7 +87,12 @@ function searchableText(product: Record<string, unknown>, variants: Array<Record
     attributes,
     variantText,
   ]
-    .filter((value) => value !== undefined && value !== null && String(value).trim().length > 0)
+    .filter(
+      (value) =>
+        value !== undefined &&
+        value !== null &&
+        String(value).trim().length > 0,
+    )
     .join(" ");
 }
 
@@ -128,9 +145,10 @@ async function upsertSupabaseVector(
     console.error(
       `[supabase-sync] non-2xx response status=${response.status} body=${message}`,
     );
-    throw new Error(`Supabase vector sync failed: ${response.status} ${message}`);
+    throw new Error(
+      `Supabase vector sync failed: ${response.status} ${message}`,
+    );
   }
-
 }
 
 export async function syncAllocatedSiteProductVector(
@@ -152,9 +170,7 @@ export async function syncAllocatedSiteProductVector(
   ]);
 
   if (!siteSnap.exists) {
-    console.warn(
-      `[supabase-sync] SKIP: site doc missing for site=${siteName}`,
-    );
+    console.warn(`[supabase-sync] SKIP: site doc missing for site=${siteName}`);
     return { skipped: "site-missing" };
   }
   if (!productSnap.exists) {
@@ -166,12 +182,20 @@ export async function syncAllocatedSiteProductVector(
 
   const owner = toPlainValue(ownerSnap.data() || {}) as Record<string, unknown>;
   const site = toPlainValue(siteSnap.data() || {}) as Record<string, unknown>;
-  const product = toPlainValue(productSnap.data() || {}) as Record<string, unknown>;
-  const variants: Array<Record<string, unknown>> = variantsSnap.docs.map((doc) => ({
-    id: doc.id,
-    ...(toPlainValue(doc.data()) as Record<string, unknown>),
-  }));
-  const totalQuantity = variants.reduce((sum, variant) => sum + (Number(variant.quantity) || 0), 0);
+  const product = toPlainValue(productSnap.data() || {}) as Record<
+    string,
+    unknown
+  >;
+  const variants: Array<Record<string, unknown>> = variantsSnap.docs.map(
+    (doc) => ({
+      id: doc.id,
+      ...(toPlainValue(doc.data()) as Record<string, unknown>),
+    }),
+  );
+  const totalQuantity = variants.reduce(
+    (sum, variant) => sum + (Number(variant.quantity) || 0),
+    0,
+  );
   const text = searchableText(product, variants);
   const embeddingVector = await createHuggingFaceEmbedding(text);
 
@@ -242,7 +266,9 @@ export async function propagateOwnerProductToAllocatedSites(
   if (!ownerProductSnap.exists) return;
 
   const productData = ownerProductSnap.data() || {};
-  const ownerVariantsById = new Map(ownerVariantsSnap.docs.map((doc) => [doc.id, doc.data()]));
+  const ownerVariantsById = new Map(
+    ownerVariantsSnap.docs.map((doc) => [doc.id, doc.data()]),
+  );
   const now = admin.firestore.FieldValue.serverTimestamp();
 
   await Promise.all(
@@ -256,7 +282,9 @@ export async function propagateOwnerProductToAllocatedSites(
       const siteProductSnap = await siteProductRef.get();
       if (!siteProductSnap.exists) return;
 
-      const siteVariantsSnap = await siteProductRef.collection("variants").get();
+      const siteVariantsSnap = await siteProductRef
+        .collection("variants")
+        .get();
       const batch = db.batch();
 
       batch.set(
@@ -284,7 +312,9 @@ export async function propagateOwnerProductToAllocatedSites(
             sourceOwnerId: ownerEmail,
             sourceProductId: productId,
             sourceVariantId: siteVariantDoc.id,
-            sourceVariantRef: ownerProductRef.collection("variants").doc(siteVariantDoc.id).path,
+            sourceVariantRef: ownerProductRef
+              .collection("variants")
+              .doc(siteVariantDoc.id).path,
             updatedAt: now,
           },
           { merge: true },
