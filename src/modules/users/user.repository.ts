@@ -31,6 +31,32 @@ export interface OwnerStoreRecord {
   updatedAt?: unknown;
 }
 
+export interface OwnerStorefrontOrderRecord {
+  id: string;
+  siteName: string;
+  customerEmail?: string;
+  customerName?: string;
+  customerPhone?: string;
+  shippingAddress?: Record<string, unknown>;
+  items?: Array<Record<string, unknown>>;
+  subtotal?: number;
+  shippingFee?: number;
+  total?: number;
+  paymentMethod?: string;
+  status?: string;
+  notes?: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export type StorefrontOrderStatus =
+  | "pending"
+  | "confirmed"
+  | "processing"
+  | "shipped"
+  | "completed"
+  | "cancelled";
+
 export interface StoreAiAssistantSettings {
   enabled: boolean;
   systemPrompt?: string;
@@ -290,6 +316,93 @@ export const getBusinessOwnerStoresRepo = async (
     })) as OwnerStoreRecord[];
 };
 
+export const getBusinessOwnerStorefrontOrdersRepo = async (
+  ownerEmail: string,
+  limit: number,
+): Promise<OwnerStorefrontOrderRecord[]> => {
+  const stores = await getBusinessOwnerStoresRepo(ownerEmail);
+  if (stores.length === 0) {
+    return [];
+  }
+
+  const ordersByStore = await Promise.all(
+    stores.map(async (store) => {
+      const ordersSnap = await db
+        .collection("sites")
+        .doc(store.siteName)
+        .collection("orders")
+        .orderBy("createdAt", "desc")
+        .limit(limit)
+        .get();
+
+      return ordersSnap.docs.map((orderDoc) => ({
+        id: orderDoc.id,
+        siteName: store.siteName,
+        ...(orderDoc.data() as Record<string, unknown>),
+      })) as OwnerStorefrontOrderRecord[];
+    }),
+  );
+
+  return ordersByStore
+    .flat()
+    .sort((a, b) => {
+      const aMillis =
+        typeof (a.createdAt as { toMillis?: () => number } | undefined)?.toMillis === "function"
+          ? (a.createdAt as { toMillis: () => number }).toMillis()
+          : new Date(String(a.createdAt || 0)).getTime();
+      const bMillis =
+        typeof (b.createdAt as { toMillis?: () => number } | undefined)?.toMillis === "function"
+          ? (b.createdAt as { toMillis: () => number }).toMillis()
+          : new Date(String(b.createdAt || 0)).getTime();
+
+      return bMillis - aMillis;
+    })
+    .slice(0, limit);
+};
+
+export const updateBusinessOwnerStorefrontOrderStatusRepo = async (
+  ownerEmail: string,
+  siteName: string,
+  orderId: string,
+  status: StorefrontOrderStatus,
+): Promise<OwnerStorefrontOrderRecord> => {
+  const siteRef = db.collection("sites").doc(siteName);
+  const orderRef = siteRef.collection("orders").doc(orderId);
+
+  return db.runTransaction(async (transaction) => {
+    const [siteSnap, orderSnap] = await Promise.all([
+      transaction.get(siteRef),
+      transaction.get(orderRef),
+    ]);
+
+    if (!siteSnap.exists) {
+      throw new Error("Business Logic Error: Store not found.");
+    }
+
+    const siteData = siteSnap.data() || {};
+    if (siteData.owner !== ownerEmail) {
+      throw new Error("Business Logic Error: You can only update orders for your own stores.");
+    }
+
+    if (!orderSnap.exists) {
+      throw new Error("Business Logic Error: Order not found.");
+    }
+
+    transaction.update(orderRef, {
+      status,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return {
+      id: orderSnap.id,
+      siteName,
+      ...(orderSnap.data() as Record<string, unknown>),
+      status,
+      updatedAt: admin.firestore.Timestamp.now(),
+    } as OwnerStorefrontOrderRecord;
+  });
+};
+
 export const updateStoreAiAssistantRepo = async (
   ownerEmail: string,
   siteName: string,
@@ -502,10 +615,6 @@ export const allocateProductToStoreRepo = async (
       transaction.get(ownerProductRef.collection("variants")),
       transaction.get(siteProductRef.collection("variants")),
     ]);
-
-    console.log(
-      `[allocate] owner=${ownerEmail} product=${productId} requestedVariantId=${variantId} ownerProductExists=${ownerProductSnap.exists} ownerVariantExists=${ownerVariantSnap.exists} actualOwnerVariantIds=[${ownerVariantsSnap.docs.map((d) => d.id).join(",")}]`,
-    );
 
     if (!ownerSnap.exists) {
       throw new Error("Business Logic Error: Business owner not found.");
@@ -909,10 +1018,6 @@ export const getTotalRevenueForPeriod = async (
     .where("type", "==", "sold");
   const snapshot = await ordersRef.get();
 
-  console.log("Total revenue - userId:", userId);
-  console.log("Total revenue - period:", period);
-  console.log("Total revenue - sold orders count:", snapshot.size);
-
   const now = new Date();
   let periodStart: Date;
 
@@ -925,8 +1030,6 @@ export const getTotalRevenueForPeriod = async (
     periodStart = new Date(now.getFullYear(), 0, 1);
   }
 
-  console.log("Period start:", periodStart);
-
   let total = 0;
   snapshot.forEach((doc: any) => {
     const orderData = doc.data();
@@ -935,14 +1038,11 @@ export const getTotalRevenueForPeriod = async (
       ? createdAtTimestamp.toDate()
       : new Date(createdAtTimestamp?._seconds * 1000 || 0);
 
-    console.log("Order date:", createdAt, "total:", orderData.total);
-
     if (createdAt >= periodStart) {
       total += orderData.total || 0;
     }
   });
 
-  console.log("Total revenue:", total);
   return total;
 };
 

@@ -25,6 +25,8 @@ import {
   createBusinessOwnerStoreService,
   updateStoreAiAssistantService,
   listBusinessOwnerStoresService,
+  listBusinessOwnerStorefrontOrdersService,
+  updateBusinessOwnerStorefrontOrderStatusService,
   listOwnerProductsForStoreAllocationService,
   listStoreAllocatedProductsService,
   allocateProductToStoreService,
@@ -237,7 +239,6 @@ export const getTotalRevenueForPeriodController = async (
 ) => {
   const userId = req.params.userId as string;
   const period = (req.query.period as string) || "week";
-  console.log("Controller - getTotalRevenueForPeriod called:", userId, period);
   try {
     const totalRevenue = await getTotalRevenueForPeriodService(userId, period);
     return successResponse(
@@ -642,6 +643,86 @@ export const listBusinessOwnerStoresController = async (
     });
   } catch (error: any) {
     console.error("Error in listBusinessOwnerStores controller:", error);
+    if (error.message.includes("Business Logic Error")) {
+      res.status(400).json({ success: false, message: error.message });
+      return;
+    }
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const listBusinessOwnerStorefrontOrdersController = async (
+  req: Request | any,
+  res: Response,
+): Promise<void> => {
+  try {
+    const ownerEmail = req.user?.email as string | undefined;
+    const limit = Number(req.query.limit) || 100;
+
+    if (!ownerEmail) {
+      res.status(401).json({
+        success: false,
+        message: "Unauthorized: No authenticated user found.",
+      });
+      return;
+    }
+
+    const orders = await listBusinessOwnerStorefrontOrdersService(ownerEmail, limit);
+
+    res.status(200).json({
+      success: true,
+      message: "Storefront orders fetched successfully",
+      data: { orders },
+    });
+  } catch (error: any) {
+    console.error("Error in listBusinessOwnerStorefrontOrders controller:", error);
+    if (error.message.includes("Business Logic Error")) {
+      res.status(400).json({ success: false, message: error.message });
+      return;
+    }
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const updateBusinessOwnerStorefrontOrderStatusController = async (
+  req: Request | any,
+  res: Response,
+): Promise<void> => {
+  try {
+    const ownerEmail = req.user?.email as string | undefined;
+    const { siteName, orderId } = req.params as { siteName?: string; orderId?: string };
+    const { status } = req.body as { status?: string };
+
+    if (!ownerEmail) {
+      res.status(401).json({
+        success: false,
+        message: "Unauthorized: No authenticated user found.",
+      });
+      return;
+    }
+
+    if (!siteName || !orderId || !status) {
+      res.status(400).json({
+        success: false,
+        message: "siteName, orderId and status are required.",
+      });
+      return;
+    }
+
+    const order = await updateBusinessOwnerStorefrontOrderStatusService(
+      ownerEmail,
+      siteName,
+      orderId,
+      status,
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Storefront order status updated successfully",
+      data: { order },
+    });
+  } catch (error: any) {
+    console.error("Error in updateBusinessOwnerStorefrontOrderStatus controller:", error);
     if (error.message.includes("Business Logic Error")) {
       res.status(400).json({ success: false, message: error.message });
       return;

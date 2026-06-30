@@ -24,6 +24,8 @@ import {
   createBusinessOwnerStoreController,
   updateStoreAiAssistantController,
   listBusinessOwnerStoresController,
+  listBusinessOwnerStorefrontOrdersController,
+  updateBusinessOwnerStorefrontOrderStatusController,
   listOwnerProductsForStoreAllocationController,
   listStoreAllocatedProductsController,
   allocateProductToStoreController,
@@ -109,6 +111,12 @@ router.get("/cashiers", verifyToken, getCashiersController);
 
 router.get("/stores", verifyToken, listBusinessOwnerStoresController);
 router.post("/stores", verifyToken, createBusinessOwnerStoreController);
+router.get("/storefront-orders", verifyToken, listBusinessOwnerStorefrontOrdersController);
+router.patch(
+  "/storefront-orders/:siteName/:orderId/status",
+  verifyToken,
+  updateBusinessOwnerStorefrontOrderStatusController,
+);
 router.patch("/stores/:siteName/ai-assistant", verifyToken, updateStoreAiAssistantController);
 router.get("/stores/products", verifyToken, listOwnerProductsForStoreAllocationController);
 router.get("/stores/:siteName/allocated-products", verifyToken, listStoreAllocatedProductsController);

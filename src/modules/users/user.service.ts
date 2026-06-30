@@ -30,12 +30,15 @@ import {
   CashierPosSaleOrderInput,
   createBusinessOwnerStoreRepo,
   getBusinessOwnerStoresRepo,
+  getBusinessOwnerStorefrontOrdersRepo,
+  updateBusinessOwnerStorefrontOrderStatusRepo,
   updateStoreAiAssistantRepo,
   getOwnerProductsForStoreAllocationRepo,
   getStoreAllocatedProductsRepo,
   allocateProductToStoreRepo,
   StoreProductAllocationInput,
   StoreAiAssistantSettings,
+  StorefrontOrderStatus,
 } from "./user.repository";
 import { syncAllocatedSiteProductVector } from "../siteProductVectors/siteProductVectorSync";
 
@@ -308,6 +311,64 @@ export const listBusinessOwnerStoresService = async (ownerEmail: string) => {
   }
 
   return getBusinessOwnerStoresRepo(ownerEmail);
+};
+
+export const listBusinessOwnerStorefrontOrdersService = async (
+  ownerEmail: string,
+  limit: number,
+) => {
+  if (!ownerEmail) {
+    throw new Error("Business Logic Error: Missing authenticated user.");
+  }
+
+  const user = await getUserData(ownerEmail);
+  if (!user || user.role !== "business_owner") {
+    throw new Error("Business Logic Error: Only business owners can access storefront orders.");
+  }
+
+  if (!Number.isInteger(limit) || limit <= 0) {
+    throw new Error("Business Logic Error: limit must be a positive integer.");
+  }
+
+  return getBusinessOwnerStorefrontOrdersRepo(ownerEmail, limit);
+};
+
+const storefrontOrderStatuses: StorefrontOrderStatus[] = [
+  "pending",
+  "confirmed",
+  "processing",
+  "shipped",
+  "completed",
+  "cancelled",
+];
+
+export const updateBusinessOwnerStorefrontOrderStatusService = async (
+  ownerEmail: string,
+  siteNameRaw: string,
+  orderId: string,
+  statusRaw: string,
+) => {
+  if (!ownerEmail) {
+    throw new Error("Business Logic Error: Missing authenticated user.");
+  }
+
+  const user = await getUserData(ownerEmail);
+  if (!user || user.role !== "business_owner") {
+    throw new Error("Business Logic Error: Only business owners can update storefront orders.");
+  }
+
+  const siteName = siteNameRaw.trim().toLowerCase();
+  const status = statusRaw.trim().toLowerCase() as StorefrontOrderStatus;
+
+  if (!siteName || !orderId) {
+    throw new Error("Business Logic Error: siteName and orderId are required.");
+  }
+
+  if (!storefrontOrderStatuses.includes(status)) {
+    throw new Error("Business Logic Error: Invalid storefront order status.");
+  }
+
+  return updateBusinessOwnerStorefrontOrderStatusRepo(ownerEmail, siteName, orderId, status);
 };
 
 export const createBusinessOwnerStoreService = async (

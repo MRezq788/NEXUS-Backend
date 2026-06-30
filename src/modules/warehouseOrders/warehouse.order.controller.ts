@@ -18,7 +18,6 @@ export function extractUserEmail(req: Request, res: Response, next: Function) {
   const email = req.headers['x-user-email'] as string;
   if (email) {
     req.userEmail = email;
-    console.log('Request from user:', email);
   }
   next();
 }

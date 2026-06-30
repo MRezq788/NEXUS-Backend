@@ -46,7 +46,6 @@ export const createProductController = async (
       variants: variants ?? [],
       active: active ?? true,
     });
-    console.log(productId);
     return successResponse(
       res,
       { id: productId },

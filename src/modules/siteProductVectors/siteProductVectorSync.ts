@@ -86,12 +86,6 @@ async function upsertSupabaseVector(
   const supabaseUrl = process.env.SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  console.log(
-    `[supabase-sync] upsert start site=${context.siteName} product=${context.productId} embeddingLen=${String(
-      row.embedding ?? "",
-    ).length}`,
-  );
-
   if (!supabaseUrl || !serviceRoleKey) {
     console.warn(
       "[supabase-sync] SKIP: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing in process.env.",
@@ -137,9 +131,6 @@ async function upsertSupabaseVector(
     throw new Error(`Supabase vector sync failed: ${response.status} ${message}`);
   }
 
-  console.log(
-    `[supabase-sync] upsert ok site=${context.siteName} product=${context.productId} status=${response.status}`,
-  );
 }
 
 export async function syncAllocatedSiteProductVector(
@@ -183,9 +174,6 @@ export async function syncAllocatedSiteProductVector(
   const totalQuantity = variants.reduce((sum, variant) => sum + (Number(variant.quantity) || 0), 0);
   const text = searchableText(product, variants);
   const embeddingVector = await createHuggingFaceEmbedding(text);
-  console.log(
-    `[supabase-sync] built payload site=${siteName} product=${productId} variants=${variants.length} textLen=${text.length} embeddingDim=${embeddingVector.length}`,
-  );
 
   await upsertSupabaseVector(
     {

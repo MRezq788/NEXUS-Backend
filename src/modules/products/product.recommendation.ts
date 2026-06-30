@@ -157,7 +157,6 @@ async function generateEmbedding(text: string): Promise<number[]> {
     if (!response.embeddings || !response.embeddings[0] || !response.embeddings[0].values) {
       throw new Error('Failed to generate embedding: response does not contain valid embeddings');
     }
-    // console.log(`[Embedding] Google GenAI response:`, response.embeddings[0].values.length, 'dimensions');
     return response.embeddings[0].values;
 }
 
@@ -371,16 +370,13 @@ export async function getRecommendationsRepo(
 
   // 2. Cold start: no warehouse orders
   if (relevantOrders.length === 0) {
-    console.log(`[Recommendations] No warehouse orders for ${userId}, using cold start`);
     return getColdStartProducts(topK);
   }
 
   // 3. Build user semantic text from unique products
   const { text: userSemanticText, purchasedProductKeys } = await buildUserSemanticText(relevantOrders);
-  console.log(`[Recommendations] User semantic:\n${userSemanticText}`);
 
   if (!userSemanticText) {
-    console.log(`[Recommendations] Could not build user context from past orders for ${userId}`);
     return [];
   }
 
@@ -395,7 +391,6 @@ export async function getRecommendationsRepo(
   );
 
   if (similarProducts.length === 0) {
-    console.log(`[Recommendations] No similar products found for ${userId}`);
     return [];
   }
 
@@ -416,7 +411,6 @@ export async function getRecommendationsRepo(
 
   // Handle case where fewer than topK products were found
   if (recommendedProducts.length < topK) {
-    console.log(`[Recommendations] Found ${recommendedProducts.length}/${topK} products, not filling remainder`);
     // Optional: fill with cold start products if you want exactly topK
     // const coldStart = await getColdStartProducts(topK - recommendedProducts.length);
     // return [...recommendedProducts, ...coldStart];

@@ -14,11 +14,9 @@ export const verifyToken = async (
   res: Response,
   next: NextFunction,
 ) => {
-  console.log("Auth middleware hit:", req.method, req.originalUrl);
   const authHeader = req.headers.authorization;
 
   if (!authHeader?.startsWith("Bearer ")) {
-    console.log("No token provided");
     return res.status(401).json({
       success: false,
       error: "No token provided",
@@ -34,8 +32,7 @@ export const verifyToken = async (
       email: decodedToken.email,
     };
     next();
-  } catch (error) {
-    console.log("Invalid token:", error);
+  } catch {
     return res.status(401).json({
       success: false,
       error: "Invalid token",

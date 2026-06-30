@@ -209,7 +209,7 @@ export const listPages = async (siteName: string): Promise<SitePageRecord[]> => 
             heading: "Welcome to your new store",
             subtext: "Build your pages with drag and drop",
             ctaText: "Shop now",
-            ctaLink: `/${siteName}/products`,
+            ctaLink: "/products",
             bgColor: "#f4f0e8",
           },
         },
